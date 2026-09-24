@@ -105,6 +105,10 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
       `Order for ${recipient.name} has been successfully delivered and COD ${recipient.codAmount} recorded.`,
       [
         {
+          text: 'Rate Artisan',
+          onPress: () => navigation?.navigate?.(ROUTES.COURIER.RATINGS),
+        },
+        {
           text: 'Back to Manifest',
           onPress: () => navigation?.navigate?.(ROUTES.COURIER.HOME),
         },
