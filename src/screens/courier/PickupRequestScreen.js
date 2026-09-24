@@ -136,6 +136,9 @@ export const PickupRequestScreen = ({ navigation, route }) => {
 
   const handleArrived = () => {
     setHasArrived(true);
+    if (navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.SCAN_PARCEL);
+    }
   };
 
   const handleTabPress = (tabKey) => {
