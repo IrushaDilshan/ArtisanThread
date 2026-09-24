@@ -36,10 +36,20 @@ export const ROUTES = {
   // Role: Courier
   COURIER: {
     ROOT: 'CourierRoot',
+    HOME: 'CourierHome',
+    PICKUP_REQUEST: 'CourierPickupRequest',
+    FIX_ADDRESS: 'CourierFixAddress',
+    SCAN_PARCEL: 'CourierScanParcel',
+    DELIVERY_TRANSIT: 'CourierDeliveryTransit',
+    CONFIRM_DELIVERY: 'CourierConfirmDelivery',
+    DELIVERY_FAILED: 'CourierDeliveryFailed',
+    RATINGS: 'CourierRatings',
     DELIVERIES: 'CourierDeliveries',
     ROUTES: 'CourierRoutes',
     EARNINGS: 'CourierEarnings',
     PROFILE: 'CourierProfile',
+    NOTIFICATIONS: 'CourierNotifications',
+    ALERTS: 'CourierNotifications',
   },
 };
 

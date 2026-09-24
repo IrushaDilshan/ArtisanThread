@@ -2,10 +2,19 @@ import React from 'react';
 import { Text, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ROUTES } from './routes';
+import { CourierHomeScreen } from '../screens/courier/CourierHomeScreen';
+import { PickupRequestScreen } from '../screens/courier/PickupRequestScreen';
+import { FixAddressScreen } from '../screens/courier/FixAddressScreen';
+import { ScanParcelScreen } from '../screens/courier/ScanParcelScreen';
+import { DeliveryTransitScreen } from '../screens/courier/DeliveryTransitScreen';
+import { ConfirmDeliveryScreen } from '../screens/courier/ConfirmDeliveryScreen';
+import { DeliveryUnsuccessfulScreen } from '../screens/courier/DeliveryUnsuccessfulScreen';
+import { CourierRatingScreen } from '../screens/courier/CourierRatingScreen';
 import { CourierDeliveriesScreen } from '../screens/courier/CourierDeliveriesScreen';
 import { CourierRoutesScreen } from '../screens/courier/CourierRoutesScreen';
 import { CourierEarningsScreen } from '../screens/courier/CourierEarningsScreen';
 import { CourierProfileScreen } from '../screens/courier/CourierProfileScreen';
+import { CourierNotificationsScreen } from '../screens/courier/CourierNotificationsScreen';
 import { COLORS } from '../constants/colors';
 
 const Tab = createBottomTabNavigator();
@@ -13,15 +22,51 @@ const Tab = createBottomTabNavigator();
 export const CourierNavigator = () => {
   return (
     <Tab.Navigator
-      initialRouteName={ROUTES.COURIER.DELIVERIES}
+      initialRouteName={ROUTES.COURIER.HOME}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textMuted,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: { display: 'none' }, // Courier screens provide pixel-perfect bottom bar
         tabBarLabelStyle: styles.tabLabel,
       }}
     >
+      <Tab.Screen
+        name={ROUTES.COURIER.HOME}
+        component={CourierHomeScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.PICKUP_REQUEST}
+        component={PickupRequestScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.FIX_ADDRESS}
+        component={FixAddressScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.SCAN_PARCEL}
+        component={ScanParcelScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.DELIVERY_TRANSIT}
+        component={DeliveryTransitScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.CONFIRM_DELIVERY}
+        component={ConfirmDeliveryScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.DELIVERY_FAILED}
+        component={DeliveryUnsuccessfulScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.RATINGS}
+        component={CourierRatingScreen}
+      />
+      <Tab.Screen
+        name={ROUTES.COURIER.NOTIFICATIONS}
+        component={CourierNotificationsScreen}
+      />
       <Tab.Screen
         name={ROUTES.COURIER.DELIVERIES}
         component={CourierDeliveriesScreen}
