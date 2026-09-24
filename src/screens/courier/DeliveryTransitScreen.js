@@ -124,12 +124,19 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
 
   const handleCantComplete = () => {
     if (navigation?.navigate) {
-      navigation.navigate(ROUTES.COURIER.DELIVERY_FAILED || 'DeliveryFailedScreen');
+      navigation.navigate(ROUTES.COURIER.DELIVERY_FAILED, {
+        trackingId,
+      });
     }
   };
 
   const handleArrived = () => {
     setHasArrived(true);
+    if (navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.CONFIRM_DELIVERY, {
+        trackingId,
+      });
+    }
   };
 
   const handleTabPress = (tabKey) => {
