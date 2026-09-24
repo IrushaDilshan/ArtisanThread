@@ -30,16 +30,11 @@ export const ScanParcelScreen = ({ navigation }) => {
 
   const handleConfirmPickup = () => {
     setIsConfirmed(true);
-    Alert.alert(
-      'Pickup Confirmed!',
-      `Parcel ${trackingId} has been successfully scanned and added to your active manifest.`,
-      [
-        {
-          text: 'Return to Jobs',
-          onPress: () => navigation?.navigate?.(ROUTES.COURIER.HOME),
-        },
-      ]
-    );
+    if (navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT, {
+        trackingId,
+      });
+    }
   };
 
   const handleManualSubmit = () => {
