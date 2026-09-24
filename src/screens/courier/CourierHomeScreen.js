@@ -251,7 +251,13 @@ export const CourierHomeScreen = ({ navigation }) => {
 
                   {job.actionLabel && (
                     <TouchableOpacity
-                      onPress={() => {}}
+                      onPress={() => {
+                        if (job.id === 'job-1' && navigation?.navigate) {
+                          navigation.navigate(ROUTES.COURIER.PICKUP_REQUEST);
+                        } else if (job.id === 'job-2' && navigation?.navigate) {
+                          navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT);
+                        }
+                      }}
                       activeOpacity={0.7}
                       style={styles.actionBtn}
                     >
