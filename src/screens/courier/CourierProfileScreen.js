@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { ROUTES } from '../../navigation/routes';
 import { useAuth } from '../../context/AuthContext';
 
@@ -103,17 +104,26 @@ const MenuIcon = ({ type }) => {
 
 export const CourierProfileScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
 
+  const courierName = user?.name || user?.full_name || 'Kavinda Fernando';
+  const initials = courierName
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || 'KF';
+
   const courierData = {
-    name: 'Kavinda Fernando',
-    initials: 'KF',
-    title: 'Express Delivery Partner',
-    subRoute: 'Kalutara & suburbs route',
+    name: courierName,
+    initials,
+    title: user?.badge || 'Express Delivery Partner',
+    subRoute: user?.location || user?.metadata?.vehicle || 'Kalutara & suburbs route',
     status: '• On duty',
-    deliveries: '128',
-    rating: '4.9 ★',
+    deliveries: user?.metadata?.deliveriesCount ? String(user.metadata.deliveriesCount) : '128',
+    rating: user?.rating || '4.9 ★',
     onTime: '98%',
   };
 
@@ -156,9 +166,6 @@ export const CourierProfileScreen = ({ navigation }) => {
               style: 'destructive',
               onPress: () => {
                 if (logout) logout();
-                if (navigation?.navigate) {
-                  navigation.navigate(ROUTES.AUTH.ROOT);
-                }
               },
             },
           ]
@@ -169,14 +176,22 @@ export const CourierProfileScreen = ({ navigation }) => {
     }
   };
 
+  // Enforce Profile tab as active whenever this screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setActiveTab('profile');
+    }, [])
+  );
+
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
     } else if (tabKey === 'alerts' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
+    } else if (tabKey === 'profile') {
+      setActiveTab('profile');
     }
   };
 

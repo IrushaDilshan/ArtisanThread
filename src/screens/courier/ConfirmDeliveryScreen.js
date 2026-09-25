@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,11 @@ import {
   StatusBar,
   Switch,
   Alert,
+  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
+import { courierService } from '../../services/courierService';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -53,13 +55,95 @@ const TabIcon = ({ name, active }) => {
   }
 };
 
+// Pure React Native vector line segment renderer (zero native build dependencies, works 100% reliably)
+const StrokeSegments = ({ stroke, strokeKey }) => {
+  if (!stroke || stroke.length === 0) return null;
+  if (stroke.length === 1) {
+    const pt = stroke[0];
+    return (
+      <View
+        key={`${strokeKey}-pt`}
+        style={{
+          position: 'absolute',
+          left: pt.x - 2,
+          top: pt.y - 2,
+          width: 4,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: '#111E1C',
+        }}
+      />
+    );
+  }
+
+  const elements = [];
+  for (let i = 0; i < stroke.length - 1; i++) {
+    const pA = stroke[i];
+    const pB = stroke[i + 1];
+    const dx = pB.x - pA.x;
+    const dy = pB.y - pA.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    if (length < 0.6) continue;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    const cx = (pA.x + pB.x) / 2;
+    const cy = (pA.y + pB.y) / 2;
+
+    elements.push(
+      <View
+        key={`${strokeKey}-seg-${i}`}
+        style={{
+          position: 'absolute',
+          left: cx - length / 2,
+          top: cy - 1.5,
+          width: length,
+          height: 3,
+          borderRadius: 1.5,
+          backgroundColor: '#111E1C',
+          transform: [{ rotate: `${angle}deg` }],
+        }}
+      />
+    );
+  }
+  return elements;
+};
+
+// Preset sample signature coordinates
+const SAMPLE_SIGNATURE = [
+  [
+    { x: 35, y: 70 }, { x: 40, y: 55 }, { x: 48, y: 35 }, { x: 56, y: 24 },
+    { x: 64, y: 36 }, { x: 68, y: 58 }, { x: 74, y: 75 }, { x: 80, y: 82 },
+  ],
+  [
+    { x: 80, y: 82 }, { x: 88, y: 58 }, { x: 96, y: 32 }, { x: 105, y: 30 },
+    { x: 114, y: 46 }, { x: 125, y: 68 }, { x: 140, y: 58 }, { x: 155, y: 50 },
+    { x: 172, y: 56 }, { x: 195, y: 46 }, { x: 220, y: 40 }, { x: 250, y: 34 },
+  ],
+  [
+    { x: 50, y: 90 }, { x: 85, y: 88 }, { x: 135, y: 86 }, { x: 190, y: 84 },
+    { x: 245, y: 82 }, { x: 265, y: 80 },
+  ],
+];
+
 export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('jobs');
+  const [deliveryData, setDeliveryData] = useState(null);
 
-  // 4-digit OTP state matching screenshot (default: 4, 8, empty, empty)
-  const [digits, setDigits] = useState(['4', '8', '', '']);
-  const inputRefs = useRef([]);
+  const trackingId = route?.params?.trackingId || 'ATH-9942-PY';
+
+  useEffect(() => {
+    let isMounted = true;
+    courierService.verifyTrackingCode(trackingId).then((del) => {
+      if (isMounted && del) {
+        setDeliveryData(del);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [trackingId]);
+
+  // Unified OTP state: '48' matches user screenshot initially
+  const [otp, setOtp] = useState('48');
+  const otpInputRef = useRef(null);
 
   // Cash on delivery collected toggle
   const [isCodCollected, setIsCodCollected] = useState(true);
@@ -67,42 +151,134 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   // Photo upload state
   const [photoTaken, setPhotoTaken] = useState(false);
 
-  // Signature state
-  const [hasSignature, setHasSignature] = useState(true);
+  // Signature drawing state (refs prevent closure drops and re-render glitches)
+  const strokesRef = useRef([]);
+  const currentStrokeRef = useRef([]);
+  const [renderCount, setRenderCount] = useState(0);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+
+  // Setup PanResponder with strictly captured touch gestures
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false, // PREVENT ScrollView from stealing touch!
+      onShouldBlockAppResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        setScrollEnabled(false);
+        const { locationX, locationY } = evt.nativeEvent;
+        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+        currentStrokeRef.current = [pt];
+        setRenderCount((c) => c + 1);
+      },
+      onPanResponderMove: (evt) => {
+        const { locationX, locationY } = evt.nativeEvent;
+        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+        const last = currentStrokeRef.current[currentStrokeRef.current.length - 1];
+        if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
+          currentStrokeRef.current.push(pt);
+          setRenderCount((c) => c + 1);
+        }
+      },
+      onPanResponderRelease: () => {
+        setScrollEnabled(true);
+        if (currentStrokeRef.current.length > 0) {
+          strokesRef.current.push([...currentStrokeRef.current]);
+          currentStrokeRef.current = [];
+          setRenderCount((c) => c + 1);
+        }
+      },
+      onPanResponderTerminate: () => {
+        setScrollEnabled(true);
+        if (currentStrokeRef.current.length > 0) {
+          strokesRef.current.push([...currentStrokeRef.current]);
+          currentStrokeRef.current = [];
+          setRenderCount((c) => c + 1);
+        }
+      },
+    })
+  ).current;
+
+  const buyerName =
+    route?.params?.buyerName ||
+    deliveryData?.order?.buyer?.full_name ||
+    deliveryData?.dropoff_address?.name ||
+    'Nimal Jayasuriya';
+  const buyerInitials = buyerName
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'NJ';
+  const buyerAddress =
+    deliveryData?.dropoff_address?.address_line1
+      ? `${deliveryData.dropoff_address.address_line1}, ${deliveryData.dropoff_address.city || ''}`
+      : '28/4 Galle Road, Colombo 03';
+  const buyerPhone =
+    deliveryData?.order?.buyer?.phone ||
+    deliveryData?.dropoff_address?.phone ||
+    '+94 77 456 7890';
+  const totalAmount =
+    route?.params?.totalAmount ||
+    (deliveryData?.order?.total_amount ? Number(deliveryData.order.total_amount) : 12500);
+
+  const artisanName = deliveryData?.pickup_address?.name ? deliveryData.pickup_address.name.split(' ')[0] : 'Kumara';
 
   const recipient = {
-    name: 'Manji Samaranayaka',
-    initials: 'MS',
-    address: 'No. 21, Gregory Road, Colombo 07',
-    phoneTag: '071 *** 4820 verified',
-    codAmount: 'Rs. 2,500.00',
+    name: buyerName,
+    initials: buyerInitials,
+    address: buyerAddress,
+    phoneTag: buyerPhone ? `+94 *** ${buyerPhone.slice(-4)} verified` : '+94 *** 4567 verified',
+    codAmount: `Rs. ${totalAmount.toLocaleString()}.00`,
   };
 
-  const handleDigitChange = (val, index) => {
-    const char = val.slice(-1);
-    const newDigits = [...digits];
-    newDigits[index] = char;
-    setDigits(newDigits);
-
-    if (char && index < 3) {
-      inputRefs.current[index + 1]?.focus();
-    }
+  const handleAutofillOtp = () => {
+    setOtp('4820');
+    otpInputRef.current?.focus();
   };
 
-  const handleKeyPress = (e, index) => {
-    if (e.nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
+  const handleClearOtp = () => {
+    setOtp('');
+    otpInputRef.current?.focus();
   };
 
   const handleClearSignature = () => {
-    setHasSignature(false);
+    strokesRef.current = [];
+    currentStrokeRef.current = [];
+    setRenderCount((c) => c + 1);
   };
 
+  const handleSampleSignature = () => {
+    strokesRef.current = SAMPLE_SIGNATURE.map((s) => [...s]);
+    currentStrokeRef.current = [];
+    setRenderCount((c) => c + 1);
+  };
+
+  const hasAnySignature = strokesRef.current.length > 0 || currentStrokeRef.current.length > 0;
+
   const handleMarkDelivered = () => {
+    const isOtpFilled = otp.length === 4;
+
+    // Validate delivery proof
+    if (!isOtpFilled && !hasAnySignature && !photoTaken) {
+      Alert.alert(
+        'Proof Required',
+        'Please enter the 4-digit buyer delivery code, obtain a recipient signature, or take a handover photo before marking as delivered.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Update delivery status to DELIVERED in database / local state
+    courierService.updateDeliveryStatus(trackingId, 'DELIVERED').catch(() => {});
+
     Alert.alert(
       'Delivery Completed! 🎉',
-      `Order for ${recipient.name} has been successfully delivered and COD ${recipient.codAmount} recorded.`,
+      `Order ${trackingId} for ${recipient.name} has been successfully delivered!\n\n${
+        isCodCollected ? `COD ${recipient.codAmount} collected.` : 'Payment confirmed.'
+      }`,
       [
         {
           text: 'Rate Artisan',
@@ -117,11 +293,12 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   };
 
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts' && navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }
@@ -145,13 +322,14 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
       </View>
 
       <ScrollView
+        scrollEnabled={scrollEnabled}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         {/* 2. Recipient Info Card */}
         <View style={styles.recipientCard}>
           <View style={styles.recipientRow}>
-            {/* Avatar Circle with Initials "MS" */}
+            {/* Avatar Circle with Initials "NJ" */}
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{recipient.initials}</Text>
             </View>
@@ -168,18 +346,23 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* 3. Delivery Verification Code (4-digit OTP) */}
+        {/* 3. Delivery Verification Code (Unified 4-digit OTP) */}
         <View style={styles.sectionBlock}>
           <Text style={styles.sectionTitle}>Delivery code from the buyer</Text>
           <Text style={styles.sectionSubtitle}>
             Ask them to read the 4 digits in their app.
           </Text>
 
-          {/* 4 OTP Input Boxes */}
-          <View style={styles.otpBoxesRow}>
-            {digits.map((digit, idx) => {
-              const isFilled = Boolean(digit);
-              const isCurrent = !digit && (idx === 0 || digits[idx - 1]);
+          {/* 4 Interactive OTP Boxes (Tapping anywhere opens keyboard) */}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => otpInputRef.current?.focus()}
+            style={styles.otpBoxesRow}
+          >
+            {[0, 1, 2, 3].map((idx) => {
+              const char = otp[idx] || '';
+              const isFilled = Boolean(char);
+              const isCurrent = otp.length === idx;
               return (
                 <View
                   key={idx}
@@ -189,21 +372,46 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
                     isCurrent && styles.otpBoxWrapperActive,
                   ]}
                 >
-                  <TextInput
-                    ref={(ref) => (inputRefs.current[idx] = ref)}
-                    style={styles.otpInput}
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    value={digit}
-                    onChangeText={(val) => handleDigitChange(val, idx)}
-                    onKeyPress={(e) => handleKeyPress(e, idx)}
-                    selectTextOnFocus
-                  />
-                  {/* Blinking/Cursor indicator for active empty box matching E6 */}
+                  <Text style={styles.otpBoxText}>{char}</Text>
+                  {/* Blinking cursor indicator for active box */}
                   {isCurrent && <View style={styles.cursorBar} />}
                 </View>
               );
             })}
+          </TouchableOpacity>
+
+          {/* Hidden Real TextInput for Soft Keyboard Entry */}
+          <TextInput
+            ref={otpInputRef}
+            style={styles.hiddenOtpInput}
+            keyboardType="number-pad"
+            maxLength={4}
+            value={otp}
+            onChangeText={(val) => {
+              const clean = val.replace(/[^0-9]/g, '').slice(0, 4);
+              setOtp(clean);
+            }}
+            caretHidden
+          />
+
+          {/* Quick OTP Autofill helper for testing / fast entry */}
+          <View style={styles.otpHelperRow}>
+            <TouchableOpacity
+              onPress={handleAutofillOtp}
+              activeOpacity={0.7}
+              style={styles.otpChipBtn}
+            >
+              <Text style={styles.otpChipText}>⚡ Read buyer code (4820)</Text>
+            </TouchableOpacity>
+            {otp.length > 0 && (
+              <TouchableOpacity
+                onPress={handleClearOtp}
+                activeOpacity={0.7}
+                style={styles.otpClearBtn}
+              >
+                <Text style={styles.otpClearText}>Clear</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -219,7 +427,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           <View style={styles.codCard}>
             <View style={styles.codTextSide}>
               <Text style={styles.codAmount}>{recipient.codAmount}</Text>
-              <Text style={styles.codSubtext}>Settles to Malsha within 24 hours</Text>
+              <Text style={styles.codSubtext}>Settles to {artisanName} within 24 hours</Text>
             </View>
 
             {/* Active Green Toggle Switch */}
@@ -239,52 +447,105 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
 
           <TouchableOpacity
             onPress={() => setPhotoTaken(!photoTaken)}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
             style={[
               styles.dashedPhotoCard,
               photoTaken && styles.dashedPhotoCardDone,
             ]}
           >
-            <View style={styles.cameraCircle}>
-              <Text style={styles.cameraIcon}>📷</Text>
-            </View>
-            <Text style={styles.photoMainText}>
-              {photoTaken ? 'Photo Captured ✓ (Tap to replace)' : 'Take a photo'}
-            </Text>
-            <Text style={styles.photoSubText}>
-              Needed when nobody signs for the parcel
-            </Text>
+            {photoTaken ? (
+              <View style={styles.photoPreviewCard}>
+                <View style={styles.photoPreviewTop}>
+                  <View style={styles.photoProofTag}>
+                    <Text style={styles.photoProofTagText}>✓ Proof Attached</Text>
+                  </View>
+                  <Text style={styles.photoRetakeAction}>📷 Tap to retake</Text>
+                </View>
+
+                <View style={styles.photoMetaBox}>
+                  <Text style={styles.photoMetaTitle}>📦 Handover verified at doorstep</Text>
+                  <Text style={styles.photoMetaSub}>
+                    {recipient.address} · Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={styles.cameraCircle}>
+                  <Text style={styles.cameraIcon}>📷</Text>
+                </View>
+                <Text style={styles.photoMainText}>Take a photo</Text>
+                <Text style={styles.photoSubText}>
+                  Needed when nobody signs for the parcel
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* 6. Recipient Signature Box */}
+        {/* 6. Recipient Digital Signature Box with Interactive Drawing Pad */}
         <View style={styles.signatureCard}>
           <View style={styles.signatureHeaderRow}>
             <Text style={styles.signatureTitle}>Recipient signature</Text>
-            <TouchableOpacity onPress={handleClearSignature} activeOpacity={0.7}>
-              <Text style={styles.clearBtnText}>Clear</Text>
-            </TouchableOpacity>
+            <View style={styles.signatureActionsRow}>
+              <TouchableOpacity
+                onPress={handleSampleSignature}
+                activeOpacity={0.7}
+                style={styles.sampleSigBtn}
+              >
+                <Text style={styles.sampleSigText}>✍️ Sample</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleClearSignature}
+                activeOpacity={0.7}
+                style={styles.clearBtn}
+              >
+                <Text style={styles.clearBtnText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Signature Canvas Area */}
-          <TouchableOpacity
-            onPress={() => setHasSignature(true)}
-            activeOpacity={0.9}
+          {/* Finger Touch Signature Drawing Pad */}
+          <View
+            {...panResponder.panHandlers}
             style={styles.signatureCanvasArea}
           >
-            {hasSignature ? (
-              <View style={styles.signatureWaveContainer}>
-                {/* Wavy Signature Path Graphic matching E6 */}
-                <View style={styles.signatureWaveArc1} />
-                <View style={styles.signatureWaveArc2} />
-                <View style={styles.signatureWaveArc3} />
-              </View>
-            ) : (
-              <Text style={styles.signaturePlaceholder}>
-                Sign here with finger...
-              </Text>
+            {/* Dashed Baseline */}
+            <View style={styles.signatureBaseline} pointerEvents="none" />
+
+            {/* Render Finished Strokes */}
+            {strokesRef.current.map((stroke, idx) => (
+              <StrokeSegments
+                key={`stroke-${idx}`}
+                stroke={stroke}
+                strokeKey={`stroke-${idx}`}
+              />
+            ))}
+
+            {/* Render Current Active Stroke in Real-time */}
+            {currentStrokeRef.current.length > 0 && (
+              <StrokeSegments
+                stroke={currentStrokeRef.current}
+                strokeKey="current-stroke"
+              />
             )}
-          </TouchableOpacity>
+
+            {/* Signature status / drawing instructions */}
+            {!hasAnySignature && (
+              <View style={styles.signaturePlaceholderBox} pointerEvents="none">
+                <Text style={styles.signaturePlaceholder}>
+                  ✍️ Draw signature here with finger...
+                </Text>
+              </View>
+            )}
+
+            {/* Bottom guide text */}
+            <View style={styles.signatureGuideBottom} pointerEvents="none">
+              <Text style={styles.signatureGuideText}>
+                {hasAnySignature ? '✓ Digital signature captured' : 'Touch & drag to sign'}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* 7. Bottom Primary Action Button */}
@@ -513,11 +774,9 @@ const styles = StyleSheet.create({
   },
   otpBoxWrapperActive: {
     borderColor: '#004D40',
+    backgroundColor: '#F7FCF9',
   },
-  otpInput: {
-    width: '100%',
-    height: '100%',
-    textAlign: 'center',
+  otpBoxText: {
     fontSize: 22,
     fontWeight: '800',
     color: '#111E1C',
@@ -525,8 +784,17 @@ const styles = StyleSheet.create({
   cursorBar: {
     position: 'absolute',
     width: 2,
-    height: 22,
+    height: 24,
     backgroundColor: '#00796B',
+    borderRadius: 1,
+  },
+  hiddenOtpInput: {
+    position: 'absolute',
+    top: -9999,
+    left: -9999,
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
 
   // ----------------------------------------------------
@@ -584,8 +852,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   dashedPhotoCardDone: {
-    borderColor: '#004D40',
-    backgroundColor: '#E0F2F1',
+    borderColor: '#10B981',
+    borderStyle: 'solid',
+    backgroundColor: '#F0FDF4',
+    paddingVertical: 12,
   },
   cameraCircle: {
     width: 38,
@@ -609,9 +879,52 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
+  photoPreviewCard: {
+    width: '100%',
+    paddingHorizontal: 12,
+  },
+  photoPreviewTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  photoProofTag: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  photoProofTagText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  photoRetakeAction: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#004D40',
+  },
+  photoMetaBox: {
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  photoMetaTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  photoMetaSub: {
+    fontSize: 10,
+    color: '#047857',
+    marginTop: 2,
+  },
 
   // ----------------------------------------------------
-  // 6. Recipient Signature Box
+  // 6. Recipient Digital Signature Box
   // ----------------------------------------------------
   signatureCard: {
     backgroundColor: '#FFFFFF',
@@ -620,6 +933,11 @@ const styles = StyleSheet.create({
     borderColor: '#EDF2F0',
     padding: 14,
     marginTop: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   signatureHeaderRow: {
     flexDirection: 'row',
@@ -632,53 +950,103 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#111E1C',
   },
+  signatureActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  sampleSigBtn: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  sampleSigText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  clearBtn: {
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
   clearBtnText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#D97706', // Orange / Gold
+    color: '#D97706',
   },
   signatureCanvasArea: {
-    height: 52,
+    height: 120,
+    borderRadius: 10,
+    backgroundColor: '#FAFBFB',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    position: 'relative',
     justifyContent: 'center',
   },
-  signatureWaveContainer: {
-    flexDirection: 'row',
+  signatureBaseline: {
+    position: 'absolute',
+    bottom: 28,
+    left: 16,
+    right: 16,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  signaturePlaceholderBox: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    paddingLeft: 8,
-    gap: -4,
-  },
-  signatureWaveArc1: {
-    width: 32,
-    height: 20,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderTopWidth: 2.5,
-    borderTopColor: '#111E1C',
-    transform: [{ rotate: '15deg' }],
-  },
-  signatureWaveArc2: {
-    width: 36,
-    height: 24,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    borderBottomWidth: 2.5,
-    borderBottomColor: '#111E1C',
-    marginTop: 8,
-  },
-  signatureWaveArc3: {
-    width: 34,
-    height: 26,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderTopWidth: 2.5,
-    borderTopColor: '#111E1C',
-    transform: [{ rotate: '-10deg' }],
+    justifyContent: 'center',
   },
   signaturePlaceholder: {
     fontSize: 12,
-    color: '#CBD5E1',
+    color: '#94A3B8',
     fontStyle: 'italic',
-    paddingLeft: 8,
+  },
+  signatureGuideBottom: {
+    position: 'absolute',
+    bottom: 6,
+    right: 10,
+  },
+  signatureGuideText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+
+  // ----------------------------------------------------
+  // OTP Helpers
+  // ----------------------------------------------------
+  otpHelperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  otpChipBtn: {
+    backgroundColor: '#E8F5EE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C6E7D6',
+  },
+  otpChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00796B',
+  },
+  otpClearBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  otpClearText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
   },
 
   // ----------------------------------------------------

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,57 +6,66 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { RoleSwitcher } from '../../components/RoleSwitcher';
-
-const FEATURED_PRODUCTS = [
-  {
-    id: 'prod_1',
-    title: 'Indigo Dyed Handloom Scarf',
-    artisan: 'Kenji Takahashi',
-    region: 'Kyoto Studio',
-    price: '$84.00',
-    tag: 'Textiles',
-    icon: '🧣',
-  },
-  {
-    id: 'prod_2',
-    title: 'Wabi-Sabi Ceramic Teapot',
-    artisan: 'Elena Rostova',
-    region: 'Prague Atelier',
-    price: '$120.00',
-    tag: 'Ceramics',
-    icon: '🫖',
-  },
-  {
-    id: 'prod_3',
-    title: 'Carved Walnut Serving Board',
-    artisan: 'Mateo Silva',
-    region: 'Oaxaca Woodworks',
-    price: '$65.00',
-    tag: 'Woodcraft',
-    icon: '🪵',
-  },
-  {
-    id: 'prod_4',
-    title: 'Brass Hand-Hammered Vessel',
-    artisan: 'Amina Nour',
-    region: 'Marrakech Metalcraft',
-    price: '$145.00',
-    tag: 'Metalwork',
-    icon: '🏺',
-  },
-];
+import { productService, isSupabaseConfigured } from '../../services';
 
 const CATEGORIES = ['All Crafts', 'Textiles', 'Ceramics', 'Woodcraft', 'Metalwork', 'Jewelry'];
 
 export const BuyerHomeScreen = ({ navigation }) => {
   const [selectedCat, setSelectedCat] = useState('All Crafts');
   const [search, setSearch] = useState('');
+  const [dbProducts, setDbProducts] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const catFilter = selectedCat === 'All Crafts' ? null : selectedCat;
+      const data = await productService.getCatalog({
+        category: catFilter,
+        searchQuery: search,
+      });
+      setDbProducts(data || []);
+    } catch (e) {
+      console.warn('Error loading products from Supabase:', e.message);
+      setDbProducts([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [selectedCat, search]);
+
+  // Re-fetch live whenever the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadProducts();
+    }, [loadProducts])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadProducts();
+  };
+
+  // Strictly maps database items — no fallback mock array
+  const displayedProducts = dbProducts.map((p) => ({
+    id: p.id,
+    title: p.title,
+    artisan: p.profiles?.full_name || 'Master Artisan',
+    region: p.profiles?.location || 'Craft Atelier',
+    price: `$${Number(p.price || 0).toFixed(2)}`,
+    tag: p.category || 'Craft',
+    icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
+  }));
 
   return (
     <View style={styles.container}>
@@ -68,6 +77,9 @@ export const BuyerHomeScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+        }
       >
         {/* Role Switcher Bar for easy demo toggling */}
         <RoleSwitcher />
@@ -122,30 +134,54 @@ export const BuyerHomeScreen = ({ navigation }) => {
         {/* Featured Products Grid */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Curated Handcrafted Pieces</Text>
-          <Text style={styles.sectionAction}>View all</Text>
+          <Text style={styles.sectionAction}>
+            {loading ? 'Refreshing...' : `${displayedProducts.length} items`}
+          </Text>
         </View>
 
-        <View style={styles.productsGrid}>
-          {FEATURED_PRODUCTS.map((prod) => (
-            <Card key={prod.id} style={styles.productCard}>
-              <View style={styles.productIconContainer}>
-                <Text style={styles.productEmoji}>{prod.icon}</Text>
-              </View>
-              <Text style={styles.productTag}>{prod.tag}</Text>
-              <Text style={styles.productTitle} numberOfLines={2}>
-                {prod.title}
-              </Text>
-              <Text style={styles.artisanName}>by {prod.artisan}</Text>
-              <Text style={styles.productRegion}>{prod.region}</Text>
-              <View style={styles.priceRow}>
-                <Text style={styles.price}>{prod.price}</Text>
-                <TouchableOpacity style={styles.addBtn}>
-                  <Text style={styles.addBtnText}>+ Add</Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          ))}
-        </View>
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Fetching handcrafted pieces from Supabase...</Text>
+          </View>
+        ) : displayedProducts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>🏺</Text>
+            <Text style={styles.emptyTitle}>No Crafts Found</Text>
+            <Text style={styles.emptySubtitle}>
+              {search
+                ? `No crafts match "${search}". Try adjusting your search.`
+                : selectedCat !== 'All Crafts'
+                ? `No pieces listed under "${selectedCat}" in the database yet.`
+                : 'No handcrafted pieces found in your database. Run the Supabase seed script or list a craft as an Artisan.'}
+            </Text>
+            <TouchableOpacity onPress={onRefresh} style={styles.emptyRefreshBtn}>
+              <Text style={styles.emptyRefreshBtnText}>🔄 Pull to Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.productsGrid}>
+            {displayedProducts.map((prod) => (
+              <Card key={prod.id} style={styles.productCard}>
+                <View style={styles.productIconContainer}>
+                  <Text style={styles.productEmoji}>{prod.icon}</Text>
+                </View>
+                <Text style={styles.productTag}>{prod.tag}</Text>
+                <Text style={styles.productTitle} numberOfLines={2}>
+                  {prod.title}
+                </Text>
+                <Text style={styles.artisanName}>by {prod.artisan}</Text>
+                <Text style={styles.productRegion}>{prod.region}</Text>
+                <View style={styles.priceRow}>
+                  <Text style={styles.price}>{prod.price}</Text>
+                  <TouchableOpacity style={styles.addBtn}>
+                    <Text style={styles.addBtnText}>+ Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -322,6 +358,57 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FFF',
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: COLORS.textMuted,
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginVertical: 12,
+  },
+  emptyEmoji: {
+    fontSize: 44,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  emptyRefreshBtn: {
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    backgroundColor: COLORS.surfaceSecondary,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  emptyRefreshBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
 });
 

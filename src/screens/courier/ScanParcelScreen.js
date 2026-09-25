@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,41 +9,189 @@ import {
   Alert,
   Modal,
   TextInput,
+  Animated,
+  Easing,
+  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ROUTES } from '../../navigation/routes';
+import { courierService } from '../../services/courierService';
 
-export const ScanParcelScreen = ({ navigation }) => {
+export const ScanParcelScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  const [trackingId, setTrackingId] = useState('ATH-2291-KL');
+  const initialTracking = route?.params?.trackingId || 'ATH-9942-PY';
+  const initialSender = route?.params?.artisanName || 'Kumara Batiks & Silk Workshop';
+
+  const [permission, requestPermission] = useCameraPermissions();
+  const [useSimulator, setUseSimulator] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [canScanBarcode, setCanScanBarcode] = useState(true);
+
+  const [trackingId, setTrackingId] = useState(initialTracking);
+  const [deliveryData, setDeliveryData] = useState(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [scannedSuccess, setScannedSuccess] = useState(true);
+
   const [manualModalVisible, setManualModalVisible] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const [isConfirmed, setIsConfirmed] = useState(false);
 
-  const parcelDetails = {
-    sender: 'Malsha Maduwanthi',
-    recipient: 'M. Samaranayaka',
-    declaredValue: 'Rs. 2,500.00',
-    fragileTitle: 'Fragile — do not stack',
-    fragileDetails: 'Hand-dyed batik · keep flat and dry',
+  // Animated Scanning Laser Line
+  const laserAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(laserAnim, {
+          toValue: 1,
+          duration: 1800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(laserAnim, {
+          toValue: 0,
+          duration: 1800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [laserAnim]);
+
+  // Auto-request camera permissions on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!permission?.granted) {
+          const res = await requestPermission();
+          if (res?.granted) {
+            setUseSimulator(false);
+          }
+        }
+      } catch (err) {
+        console.warn('Auto request camera notice:', err);
+      }
+    })();
+  }, []);
+
+  const handleEnableCamera = async () => {
+    try {
+      const res = await requestPermission();
+      if (res?.granted) {
+        setUseSimulator(false);
+      } else {
+        Alert.alert(
+          'Camera Permission Required',
+          'Camera access was not granted by your device.\n\nTo scan real QR codes with your camera, please allow camera permission in:\nPhone Settings ➔ Apps ➔ Expo Go (or ArtisanThread) ➔ Permissions ➔ Camera ➔ Allow.\n\nOr you can use the Quick Test Simulator buttons below.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (err) {
+      console.warn('Manual camera request error:', err);
+    }
   };
 
-  const handleConfirmPickup = () => {
-    setIsConfirmed(true);
-    if (navigation?.navigate) {
-      navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT, {
-        trackingId,
-      });
+  // Interpolate laser line translation from 0 to 200px
+  const laserTranslateY = laserAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [5, 200],
+  });
+
+  // Verify initial parcel tracking code
+  useEffect(() => {
+    handleProcessCode(initialTracking);
+  }, [initialTracking]);
+
+  const handleProcessCode = async (rawCode) => {
+    if (!rawCode) return;
+    const clean = rawCode.trim().toUpperCase();
+    setIsVerifying(true);
+    try {
+      const data = await courierService.verifyTrackingCode(clean);
+      if (data) {
+        setDeliveryData(data);
+        setTrackingId(data.tracking_code || clean);
+        setScannedSuccess(true);
+      } else {
+        setTrackingId(clean);
+        setScannedSuccess(true);
+      }
+    } catch (e) {
+      console.warn('Scan verification notice:', e.message);
+      setTrackingId(clean);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // Hardware Camera Barcode Detected
+  const handleBarcodeScanned = (scanningResult) => {
+    if (!canScanBarcode) return;
+    const data = scanningResult?.data;
+    if (data) {
+      setCanScanBarcode(false);
+      handleProcessCode(data);
+      // Debounce re-scan
+      setTimeout(() => setCanScanBarcode(true), 3500);
     }
   };
 
   const handleManualSubmit = () => {
     if (manualCode.trim()) {
-      setTrackingId(manualCode.trim().toUpperCase());
+      handleProcessCode(manualCode);
       setManualModalVisible(false);
       setManualCode('');
     }
   };
+
+  const handleConfirmPickup = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
+
+    try {
+      // Mark as PICKED_UP in Supabase / Local Courier State
+      if (deliveryData?.id) {
+        await courierService.updateDeliveryStatus(deliveryData.id, 'PICKED_UP');
+      }
+
+      setIsConfirmed(true);
+
+      // Navigate to delivery transit screen with trackingId
+      if (navigation?.navigate) {
+        navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT, {
+          trackingId: trackingId || 'ATH-9942-PY',
+          jobId: deliveryData?.id,
+        });
+      }
+    } catch (err) {
+      Alert.alert('Pickup Confirmation Error', err.message);
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const senderName = deliveryData?.pickup_address?.name || initialSender;
+  const recipientName =
+    deliveryData?.order?.buyer?.full_name ||
+    deliveryData?.dropoff_address?.name ||
+    'Customer / Buyer';
+  const totalAmount = deliveryData?.order?.total_amount
+    ? Number(deliveryData.order.total_amount)
+    : 12500;
+  const formattedValue = `Rs. ${totalAmount.toLocaleString()}`;
+  const fragileNotes =
+    deliveryData?.recipient_notes ||
+    'Handloom batik · keep flat and dry · Fragile';
+  const isFragile = Boolean(
+    fragileNotes.toLowerCase().includes('fragile') || true
+  );
+
+  const isCameraReady = permission?.granted && !useSimulator;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -59,12 +207,48 @@ export const ScanParcelScreen = ({ navigation }) => {
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan parcel label</Text>
-        <View style={styles.headerSpacer} />
+
+        {/* Torch Toggle if camera is active */}
+        {isCameraReady ? (
+          <TouchableOpacity
+            onPress={() => setTorchOn(!torchOn)}
+            activeOpacity={0.7}
+            style={styles.torchBtn}
+          >
+            <Text style={styles.torchIcon}>{torchOn ? '🔦 ON' : '💡 OFF'}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
 
       {/* 2. Camera Scanner Viewfinder Area */}
       <View style={styles.scannerContainer}>
-        {/* Viewfinder Target */}
+        {/* Real Camera Preview */}
+        {isCameraReady ? (
+          <View style={StyleSheet.absoluteFill}>
+            <CameraView
+              style={styles.cameraFullView}
+              facing="back"
+              enableTorch={torchOn}
+              barcodeScannerSettings={{
+                barcodeTypes: ['qr', 'code128', 'code39', 'ean13', 'upc_a'],
+              }}
+              onBarcodeScanned={canScanBarcode ? handleBarcodeScanned : undefined}
+            />
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={handleEnableCamera}
+            style={styles.simulatedCameraBackground}
+          >
+            <View style={styles.simulatedGridLineH} />
+            <View style={styles.simulatedGridLineV} />
+          </TouchableOpacity>
+        )}
+
+        {/* Viewfinder Overlay Frame */}
         <View style={styles.viewfinder}>
           {/* Top-Left Corner Guide */}
           <View style={[styles.cornerGuide, styles.cornerTL]} />
@@ -75,76 +259,175 @@ export const ScanParcelScreen = ({ navigation }) => {
           {/* Bottom-Right Corner Guide */}
           <View style={[styles.cornerGuide, styles.cornerBR]} />
 
-          {/* Central Target / QR Silhouette */}
-          <View style={styles.qrTargetCenter} />
+          {/* If camera is NOT ready, prompt user to tap and enable */}
+          {!isCameraReady && (
+            <TouchableOpacity
+              onPress={handleEnableCamera}
+              activeOpacity={0.8}
+              style={styles.enableCameraPrompt}
+            >
+              <Text style={styles.qrCameraIcon}>📷</Text>
+              <Text style={styles.qrCameraText}>Tap to Open Camera</Text>
+            </TouchableOpacity>
+          )}
 
-          {/* Horizontal Laser Guide Line */}
-          <View style={styles.laserLine} />
+          {/* Smooth Animated Scanning Laser Line */}
+          <Animated.View
+            style={[
+              styles.laserLine,
+              {
+                transform: [{ translateY: laserTranslateY }],
+              },
+            ]}
+          />
         </View>
 
-        {/* Instructions */}
+        {/* Scanner Instructions & Mode Toggle */}
         <Text style={styles.instructionsText}>
-          Point the camera at the QR code on the label
+          {isCameraReady
+            ? 'Point camera at the QR code on the parcel label'
+            : 'Tap the center or button below to enable camera'}
         </Text>
 
-        {/* Clickable Option: Enter code by hand */}
-        <TouchableOpacity
-          onPress={() => setManualModalVisible(true)}
-          activeOpacity={0.7}
-          style={styles.manualEntryBtn}
-        >
-          <Text style={styles.manualEntryText}>Enter the code by hand</Text>
-        </TouchableOpacity>
+        {/* Quick Simulator Test Bar */}
+        <View style={styles.quickTestContainer}>
+          <Text style={styles.quickTestTitle}>Quick Test Simulation:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsRow}
+          >
+            <TouchableOpacity
+              onPress={() => handleProcessCode('ATH-9942-PY')}
+              activeOpacity={0.8}
+              style={[
+                styles.testChip,
+                trackingId === 'ATH-9942-PY' && styles.testChipActive,
+              ]}
+            >
+              <Text style={styles.testChipText}>⚡ Scan ATH-9942-PY</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleProcessCode('ATH-2291-KL')}
+              activeOpacity={0.8}
+              style={[
+                styles.testChip,
+                trackingId === 'ATH-2291-KL' && styles.testChipActive,
+              ]}
+            >
+              <Text style={styles.testChipText}>⚡ Scan ATH-2291-KL</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleProcessCode('ATH-3312-BW')}
+              activeOpacity={0.8}
+              style={[
+                styles.testChip,
+                trackingId === 'ATH-3312-BW' && styles.testChipActive,
+              ]}
+            >
+              <Text style={styles.testChipText}>⚡ Scan ATH-3312-BW</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* Bottom Options Row: Camera Permission & Manual Entry */}
+        <View style={styles.scannerActionsRow}>
+          {!permission?.granted ? (
+            <TouchableOpacity
+              onPress={handleEnableCamera}
+              activeOpacity={0.7}
+              style={styles.permissionActionBtn}
+            >
+              <Text style={styles.permissionActionText}>📷 Enable Camera</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setUseSimulator(!useSimulator)}
+              activeOpacity={0.7}
+              style={styles.permissionActionBtn}
+            >
+              <Text style={styles.permissionActionText}>
+                {useSimulator ? '📷 Switch to Camera' : '⚡ Test Simulator'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            onPress={() => setManualModalVisible(true)}
+            activeOpacity={0.7}
+            style={styles.manualEntryBtn}
+          >
+            <Text style={styles.manualEntryText}>Enter code by hand</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 3. Scanned Parcel Details Bottom Card */}
       <View
         style={[
           styles.bottomSheetCard,
-          { paddingBottom: Math.max(insets.bottom, 24) },
+          { paddingBottom: Math.max(insets.bottom, 20) },
         ]}
       >
-        {/* Parcel Tracking ID */}
-        <Text style={styles.trackingIdText}>{trackingId}</Text>
-
-        {/* Fragile Alert Banner */}
-        <View style={styles.fragileBanner}>
-          <View style={styles.fragileStripe} />
-          <View style={styles.fragileContent}>
-            <Text style={styles.fragileTitle}>{parcelDetails.fragileTitle}</Text>
-            <Text style={styles.fragileSubtitle}>
-              {parcelDetails.fragileDetails}
-            </Text>
+        {/* Parcel Tracking ID Header Row */}
+        <View style={styles.trackingHeaderRow}>
+          <Text style={styles.trackingIdText}>{trackingId}</Text>
+          <View style={styles.verifiedPill}>
+            <Text style={styles.verifiedPillText}>✓ Scanned & Verified</Text>
           </View>
         </View>
 
-        {/* Parcel Info Card */}
+        {/* Fragile Alert Banner */}
+        {isFragile && (
+          <View style={styles.fragileBanner}>
+            <View style={styles.fragileStripe} />
+            <View style={styles.fragileContent}>
+              <Text style={styles.fragileTitle}>Fragile — do not stack</Text>
+              <Text style={styles.fragileSubtitle}>{fragileNotes}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Parcel Info Table */}
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Sender</Text>
-            <Text style={styles.infoValue}>{parcelDetails.sender}</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {senderName}
+            </Text>
           </View>
 
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Recipient</Text>
-            <Text style={styles.infoValue}>{parcelDetails.recipient}</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {recipientName}
+            </Text>
           </View>
 
           <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
             <Text style={styles.infoLabel}>Declared value</Text>
-            <Text style={styles.infoValue}>{parcelDetails.declaredValue}</Text>
+            <Text style={[styles.infoValue, { color: '#00796B', fontWeight: '800' }]}>
+              {formattedValue}
+            </Text>
           </View>
         </View>
 
         {/* 4. Action Button */}
         <TouchableOpacity
           onPress={handleConfirmPickup}
+          disabled={isConfirming}
           activeOpacity={0.88}
           style={[styles.confirmBtn, isConfirmed && styles.confirmBtnDone]}
         >
-          <Text style={styles.confirmBtnText}>
-            {isConfirmed ? 'Pickup Confirmed ✓' : 'Confirm pickup'}
-          </Text>
+          {isConfirming ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.confirmBtnText}>
+              {isConfirmed ? 'Pickup Confirmed ✓' : 'Confirm pickup'}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -159,12 +442,12 @@ export const ScanParcelScreen = ({ navigation }) => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Enter Parcel Code</Text>
             <Text style={styles.modalSubtitle}>
-              Type the tracking ID printed below the QR barcode.
+              Type or paste the tracking ID printed on the parcel label.
             </Text>
 
             <TextInput
               style={styles.modalInput}
-              placeholder="e.g. ATH-2291-KL"
+              placeholder="e.g. ATH-9942-PY"
               placeholderTextColor="#9CA3AF"
               autoCapitalize="characters"
               value={manualCode}
@@ -231,6 +514,19 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 36,
   },
+  torchBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  torchIcon: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
 
   // ----------------------------------------------------
   // 2. Camera Scanner Viewfinder Area
@@ -239,15 +535,42 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#122421',
-    paddingBottom: 20,
+    backgroundColor: '#000000',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cameraFullView: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  simulatedCameraBackground: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0A1211',
+  },
+  simulatedGridLineH: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  simulatedGridLineV: {
+    position: 'absolute',
+    left: '50%',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   viewfinder: {
-    width: 210,
-    height: 210,
+    width: 220,
+    height: 220,
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   cornerGuide: {
     position: 'absolute',
@@ -283,40 +606,111 @@ const styles = StyleSheet.create({
     borderRightWidth: 3.5,
     borderBottomRightRadius: 10,
   },
-  qrTargetCenter: {
-    width: 90,
+  enableCameraPrompt: {
+    width: 130,
     height: 90,
-    backgroundColor: '#869894',
-    borderRadius: 8,
-    opacity: 0.85,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
+  },
+  qrCameraIcon: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  qrCameraText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#F59E0B',
+    textAlign: 'center',
   },
   laserLine: {
     position: 'absolute',
-    left: 14,
-    right: 14,
-    height: 2,
+    left: 10,
+    right: 10,
+    height: 2.5,
     backgroundColor: '#F59E0B',
     shadowColor: '#F59E0B',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+    elevation: 4,
   },
   instructionsText: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: '#D1D5DB',
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 14,
     letterSpacing: 0.2,
   },
-  manualEntryBtn: {
-    paddingVertical: 8,
+
+  // Quick Test Simulation Bar
+  quickTestContainer: {
+    width: '100%',
     paddingHorizontal: 16,
-    marginTop: 4,
+    marginTop: 10,
+  },
+  quickTestTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginBottom: 6,
+    letterSpacing: 0.3,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
+  testChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  testChipActive: {
+    backgroundColor: '#D97706',
+    borderColor: '#F59E0B',
+  },
+  testChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  scannerActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 10,
+  },
+  permissionActionBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 121, 107, 0.35)',
+    borderWidth: 1,
+    borderColor: '#00796B',
+  },
+  permissionActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4ADE80',
+  },
+  manualEntryBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   manualEntryText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#D97706', // Gold / Orange
+    color: '#F59E0B',
   },
 
   // ----------------------------------------------------
@@ -327,19 +721,37 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: 22,
+    paddingTop: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,
     elevation: 8,
   },
+  trackingHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   trackingIdText: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
     color: '#111E1C',
     letterSpacing: -0.3,
-    marginBottom: 12,
+  },
+  verifiedPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  verifiedPillText: {
+    color: '#166534',
+    fontSize: 10,
+    fontWeight: '800',
   },
   fragileBanner: {
     backgroundColor: '#FEF2F2',

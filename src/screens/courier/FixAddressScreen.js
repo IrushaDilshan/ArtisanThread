@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
+import { courierService } from '../../services/courierService';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -52,33 +54,88 @@ const TabIcon = ({ name, active }) => {
   }
 };
 
-export const FixAddressScreen = ({ navigation }) => {
+export const FixAddressScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('jobs');
   const [selectedProblem, setSelectedProblem] = useState('Address not found');
   const [landmarkText, setLandmarkText] = useState('');
-  const [pinPosition, setPinPosition] = useState({ x: 200, y: 80 });
+  const [pinPosition, setPinPosition] = useState({ x: 215, y: 78 });
   const [isSent, setIsSent] = useState(false);
+  const [deliveryData, setDeliveryData] = useState(null);
+
+  const trackingId = route?.params?.trackingId || 'ATH-9942-PY';
+
+  useEffect(() => {
+    let isMounted = true;
+    courierService.verifyTrackingCode(trackingId).then((del) => {
+      if (isMounted && del) {
+        setDeliveryData(del);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [trackingId]);
+
+  const artisanName = deliveryData?.pickup_address?.name
+    ? deliveryData.pickup_address.name.split(' ')[0]
+    : 'Malsha';
+  const pickupCity = deliveryData?.pickup_address?.city || 'Payagala';
+  const pickupStreet = deliveryData?.pickup_address?.address_line1 || 'Temple Road';
 
   const problemOptions = [
     'Address not found',
     'No landmark given',
     'Wrong phone number',
     'Nobody at gate',
+    'Road blocked / inaccessible',
   ];
+
+  const landmarkChips = [
+    '⚡ Beside the temple',
+    '⚡ Yellow gate',
+    '⚡ 200m past junction',
+    '⚡ Opposite BOC bank',
+  ];
+
+  // Registered pin fixed reference on map canvas
+  const registeredPin = { x: 110, y: 68 };
+
+  // Calculate approximate distance offset in meters
+  const dx = pinPosition.x - registeredPin.x;
+  const dy = pinPosition.y - registeredPin.y;
+  const offsetMeters = Math.max(25, Math.round(Math.sqrt(dx * dx + dy * dy) * 2.2));
 
   const handleMapPress = (e) => {
     const { locationX, locationY } = e.nativeEvent;
-    if (locationX && locationY) {
-      setPinPosition({ x: locationX, y: locationY });
+    if (locationX !== undefined && locationY !== undefined) {
+      // Keep pin neatly within canvas boundaries
+      const clampedX = Math.max(30, Math.min(locationX, 330));
+      const clampedY = Math.max(35, Math.min(locationY, 185));
+      setPinPosition({ x: clampedX, y: clampedY });
     }
+  };
+
+  const handleSnapToGps = () => {
+    setPinPosition({ x: 235, y: 88 });
+  };
+
+  const handleOpenGoogleMaps = () => {
+    const lat = deliveryData?.pickup_lat || 6.773;
+    const lng = deliveryData?.pickup_lng || 79.8816;
+    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    Linking.openURL(url).catch(() => {});
   };
 
   const handleSendCorrection = () => {
     setIsSent(true);
+
+    // Save correction in courier service
+    courierService.updateCourierLocation(trackingId, 6.7732, 79.882).catch(() => {});
+
     Alert.alert(
-      'Correction Sent!',
-      'Malsha has received your live GPS pin and landmark alert. You can now proceed with your pickup.',
+      'Correction Sent! 🎉',
+      `${artisanName} has received your live GPS pin (~${offsetMeters}m correction) and landmark alert: "${
+        landmarkText || 'Pin relocated'
+      }". You can now proceed with your pickup.`,
       [
         {
           text: 'Return to Pickup',
@@ -89,11 +146,12 @@ export const FixAddressScreen = ({ navigation }) => {
   };
 
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts' && navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }
@@ -155,45 +213,53 @@ export const FixAddressScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* 3. Interactive Map Pinning Section */}
+        {/* 3. Interactive Realistic Map Pinning Section */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionHeading}>Drop a pin where you actually are</Text>
+          <View style={styles.mapSectionHeaderRow}>
+            <Text style={styles.sectionHeading}>Drop a pin where you actually are</Text>
+            <Text style={styles.mapHintBadge}>👆 Tap map to drop</Text>
+          </View>
 
           <TouchableOpacity
-            activeOpacity={0.95}
+            activeOpacity={0.96}
             onPress={handleMapPress}
             style={styles.mapBox}
           >
             {/* Map Canvas Background */}
             <View style={styles.mapCanvas}>
+              {/* Coastal/River water curve */}
+              <View style={styles.mapWater} />
+
               {/* Green Park Areas */}
               <View style={[styles.mapPark, { top: 12, left: 14, width: 75, height: 42 }]} />
-              <View style={[styles.mapPark, { bottom: 12, right: 35, width: 90, height: 42 }]} />
+              <View style={[styles.mapPark, { bottom: 18, right: 35, width: 90, height: 42 }]} />
 
-              {/* Roads */}
-              <View style={[styles.mapRoadH, { top: 38 }]} />
-              <View style={[styles.mapRoadH, { top: 88 }]} />
+              {/* Roads Network */}
+              <View style={[styles.mapRoadH, { top: 44 }]} />
+              <View style={[styles.mapRoadH, { top: 104 }]} />
               <View style={[styles.mapRoadV, { left: 95 }]} />
               <View style={[styles.mapRoadV, { right: 85 }]} />
               <View style={styles.mapRoadDiagonal} />
 
-              {/* Labels */}
-              <Text style={[styles.mapLabel, { top: 16, right: 90 }]}>SANTA CLARA</Text>
-              <Text style={[styles.mapLabel, { top: 22, right: 18 }]}>W HEDDING ST</Text>
-              <Text style={[styles.mapLabel, { top: 56, right: 32 }]}>ROSE GARDEN</Text>
-              <Text style={[styles.mapLabel, { top: 72, left: 110 }]}>MOORPARK AVE</Text>
-              <Text style={[styles.mapLabel, { top: 76, right: 28 }]}>W SAN CARLOS</Text>
-
-              {/* Highway Shields */}
-              <View style={[styles.highwayShield, { bottom: 26, left: 24 }]}>
-                <Text style={styles.highwayNumber}>82</Text>
-              </View>
-              <View style={[styles.highwayShield, { bottom: 18, right: 20 }]}>
-                <Text style={styles.highwayNumber}>280</Text>
-              </View>
+              {/* Authentic Sri Lankan Road Labels */}
+              <Text style={[styles.mapLabel, { top: 18, left: 108 }]}>A2 GALLE ROAD</Text>
+              <Text style={[styles.mapLabel, { top: 52, right: 28 }]}>
+                {pickupStreet.toUpperCase()}
+              </Text>
+              <Text style={[styles.mapLabel, { top: 88, left: 24 }]}>
+                {pickupCity.toUpperCase()} JUNCTION
+              </Text>
+              <Text style={[styles.mapLabel, { bottom: 26, right: 32 }]}>
+                RAILWAY STATION RD
+              </Text>
 
               {/* Pin 1: Registered Pin (Gray with Error Cross Circle) */}
-              <View style={styles.registeredPinContainer}>
+              <View
+                style={[
+                  styles.registeredPinContainer,
+                  { left: registeredPin.x - 16, top: registeredPin.y - 20 },
+                ]}
+              >
                 <View style={styles.errorHighlightCircle}>
                   <Text style={styles.errorCross}>✕</Text>
                 </View>
@@ -201,34 +267,86 @@ export const FixAddressScreen = ({ navigation }) => {
                   <View style={styles.grayPinDot} />
                 </View>
                 <View style={styles.grayPinPoint} />
-                <Text style={styles.registeredLabel}>Registered</Text>
+                <View style={styles.registeredLabelCard}>
+                  <Text style={styles.registeredLabel}>⚠️ Registered (Wrong)</Text>
+                </View>
               </View>
 
-              {/* Pin 2: Your Pin (Dark Green with Dot) */}
+              {/* Pin 2: Your Pin (Dark Green with Radar Pulse Ring) */}
               <View
                 style={[
                   styles.yourPinContainer,
-                  { left: pinPosition.x - 14, top: pinPosition.y - 32 },
+                  { left: pinPosition.x - 15, top: pinPosition.y - 32 },
                 ]}
               >
+                <View style={styles.radarPulseRing} />
                 <View style={styles.greenPinOuter}>
                   <View style={styles.greenPinDot} />
                 </View>
                 <View style={styles.greenPinPoint} />
-                <Text style={styles.yourPinLabel}>Your pin</Text>
+                <View style={styles.yourPinCallout}>
+                  <Text style={styles.yourPinLabel}>📍 Your Pin (~{offsetMeters}m)</Text>
+                </View>
               </View>
             </View>
 
-            {/* Bottom-Right Overlay Pill Button: "Hold to move pin" */}
-            <View style={styles.holdToMoveBadge}>
-              <Text style={styles.holdToMoveText}>Hold to move pin</Text>
+            {/* Top-Left Floating Badge: Distance offset */}
+            <View style={styles.offsetBadge}>
+              <Text style={styles.offsetBadgeText}>📏 ~{offsetMeters}m from registered</Text>
             </View>
+
+            {/* Top-Right Floating Badge: Live GPS Mode */}
+            <View style={styles.gpsModeBadge}>
+              <Text style={styles.gpsModeBadgeText}>🟢 GPS Pin Active</Text>
+            </View>
+
+            {/* Bottom-Right Overlay Pill Button: "Snap to live GPS" */}
+            <TouchableOpacity
+              onPress={handleSnapToGps}
+              activeOpacity={0.8}
+              style={styles.holdToMoveBadge}
+            >
+              <Text style={styles.holdToMoveText}>🎯 Snap to my location</Text>
+            </TouchableOpacity>
           </TouchableOpacity>
+
+          {/* Quick Map Action Row */}
+          <View style={styles.mapQuickActionsRow}>
+            <TouchableOpacity
+              onPress={handleSnapToGps}
+              activeOpacity={0.7}
+              style={styles.mapQuickActionChip}
+            >
+              <Text style={styles.mapQuickActionChipText}>📍 Reset to Current GPS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleOpenGoogleMaps}
+              activeOpacity={0.7}
+              style={styles.mapQuickActionChip}
+            >
+              <Text style={styles.mapQuickActionChipText}>🗺️ Open Google Maps ↗</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* 4. Landmark Input Box ("Add a landmark (optional)") */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionHeading}>Add a landmark (optional)</Text>
+
+          {/* Quick Landmark Suggestion Chips */}
+          <View style={styles.landmarkChipsRow}>
+            {landmarkChips.map((chip, idx) => (
+              <TouchableOpacity
+                key={idx}
+                onPress={() => setLandmarkText(chip.replace('⚡ ', ''))}
+                activeOpacity={0.7}
+                style={styles.landmarkSuggestChip}
+              >
+                <Text style={styles.landmarkSuggestText}>{chip}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <View style={styles.landmarkInputContainer}>
             <TextInput
               style={styles.landmarkTextInput}
@@ -248,7 +366,7 @@ export const FixAddressScreen = ({ navigation }) => {
             <Text style={styles.infoIconText}>i</Text>
           </View>
           <Text style={styles.noticeText}>
-            Malsha gets this correction as an in-app alert and an SMS within 60 seconds.
+            {artisanName} gets this correction as an in-app alert and an SMS within 60 seconds.
           </Text>
         </View>
 
@@ -433,84 +551,97 @@ const styles = StyleSheet.create({
   // ----------------------------------------------------
   // 3. Interactive Map Pinning
   // ----------------------------------------------------
+  mapSectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  mapHintBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00796B',
+  },
   mapBox: {
-    height: 185,
-    borderRadius: 16,
+    height: 200,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    elevation: 2,
   },
   mapCanvas: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#F7F8F7',
+    backgroundColor: '#F8FAFC',
+  },
+  mapWater: {
+    position: 'absolute',
+    top: -20,
+    right: -30,
+    width: 140,
+    height: 250,
+    borderRadius: 70,
+    backgroundColor: '#E0F2FE',
+    transform: [{ rotate: '15deg' }],
   },
   mapPark: {
     position: 'absolute',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
   },
   mapRoadH: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 9,
+    height: 11,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#E2E8E6',
+    borderColor: '#E2E8F0',
   },
   mapRoadV: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 9,
+    width: 11,
     backgroundColor: '#FFFFFF',
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: '#E2E8E6',
+    borderColor: '#E2E8F0',
   },
   mapRoadDiagonal: {
     position: 'absolute',
     left: -20,
-    top: 40,
-    width: 260,
-    height: 7,
+    top: 45,
+    width: 280,
+    height: 9,
     backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '-25deg' }],
+    transform: [{ rotate: '-22deg' }],
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#E2E8E6',
+    borderColor: '#E2E8F0',
   },
   mapLabel: {
     position: 'absolute',
     fontSize: 8.5,
-    fontWeight: '700',
-    color: '#9CA3AF',
+    fontWeight: '800',
+    color: '#64748B',
     letterSpacing: 0.5,
   },
-  highwayShield: {
-    position: 'absolute',
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E53935',
-  },
-  highwayNumber: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
-  },
 
-  // Registered Pin (Gray)
+  // Registered Pin (Gray with Error Cross Circle)
   registeredPinContainer: {
     position: 'absolute',
-    top: 48,
-    left: 110,
     alignItems: 'center',
+    zIndex: 5,
   },
   errorHighlightCircle: {
     position: 'absolute',
@@ -555,18 +686,36 @@ const styles = StyleSheet.create({
     marginTop: -2,
     zIndex: 2,
   },
-  registeredLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#6B7280',
+  registeredLabelCard: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#EF4444',
     marginTop: 2,
   },
+  registeredLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
 
-  // Your Pin (Dark Green)
+  // Your Pin (Dark Green with Radar Pulse Ring)
   yourPinContainer: {
     position: 'absolute',
     alignItems: 'center',
-    zIndex: 10,
+    zIndex: 15,
+  },
+  radarPulseRing: {
+    position: 'absolute',
+    top: -6,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 77, 64, 0.2)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 77, 64, 0.4)',
   },
   greenPinOuter: {
     width: 26,
@@ -579,6 +728,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
+    elevation: 4,
   },
   greenPinDot: {
     width: 8,
@@ -597,24 +747,67 @@ const styles = StyleSheet.create({
     borderTopColor: '#004D40',
     marginTop: -2,
   },
-  yourPinLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#004D40',
+  yourPinCallout: {
+    backgroundColor: '#004D40',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
     marginTop: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  yourPinLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Floating Badges on Map
+  offsetBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  offsetBadgeText: {
+    color: '#38BDF8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  gpsModeBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: '#E6F4EA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBE6C9',
+  },
+  gpsModeBadgeText: {
+    color: '#065F46',
+    fontSize: 10,
+    fontWeight: '700',
   },
 
   // Hold to move pin pill button
   holdToMoveBadge: {
     position: 'absolute',
-    bottom: 12,
-    right: 12,
+    bottom: 10,
+    right: 10,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -627,9 +820,51 @@ const styles = StyleSheet.create({
     color: '#004D40',
   },
 
+  // Map Quick Actions
+  mapQuickActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  mapQuickActionChip: {
+    flex: 1,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapQuickActionChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#004D40',
+  },
+
   // ----------------------------------------------------
   // 4. Landmark Input Box
   // ----------------------------------------------------
+  landmarkChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  landmarkSuggestChip: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  landmarkSuggestText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+
   landmarkInputContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,

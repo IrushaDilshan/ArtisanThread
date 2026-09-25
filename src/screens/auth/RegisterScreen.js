@@ -14,14 +14,17 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuth } from '../../context/AuthContext';
 import { ROUTES, ROLES } from '../../navigation/routes';
+import { Alert } from 'react-native';
 
 export const RegisterScreen = ({ navigation, route }) => {
-  const { login } = useAuth();
+  const { register, login, isLiveBackend } = useAuth();
   const initialRole = route?.params?.defaultRole || ROLES.BUYER;
   const [selectedRole, setSelectedRole] = useState(initialRole);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [craftOrVehicle, setCraftOrVehicle] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const roles = [
     { key: ROLES.BUYER, label: 'Buyer', icon: '🛍️' },
@@ -29,11 +32,40 @@ export const RegisterScreen = ({ navigation, route }) => {
     { key: ROLES.COURIER, label: 'Courier', icon: '📦' },
   ];
 
-  const handleRegister = () => {
-    login(selectedRole, {
-      name: fullName || (selectedRole === ROLES.BUYER ? 'New Collector' : selectedRole === ROLES.ARTISAN ? 'Studio Artisan' : 'Delivery Partner'),
-      email: email || `${selectedRole}@artisanthread.com`,
-    });
+  const handleRegister = async () => {
+    if (!email.trim()) {
+      Alert.alert('Validation Error', 'Please enter your email address.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      if (isLiveBackend) {
+        if (!password || password.length < 6) {
+          Alert.alert('Validation Error', 'Password must be at least 6 characters.');
+          return;
+        }
+        await register({
+          email: email.trim(),
+          password,
+          fullName: fullName.trim() || 'New Member',
+          role: selectedRole,
+          metadata: {
+            specialty: craftOrVehicle,
+            vehicle: craftOrVehicle,
+          },
+        });
+      } else {
+        login(selectedRole, {
+          name: fullName || (selectedRole === ROLES.BUYER ? 'New Collector' : selectedRole === ROLES.ARTISAN ? 'Studio Artisan' : 'Delivery Partner'),
+          email: email || `${selectedRole}@artisanthread.com`,
+        });
+      }
+    } catch (err) {
+      Alert.alert('Registration Failed', err.message || 'Could not complete registration.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -92,6 +124,17 @@ export const RegisterScreen = ({ navigation, route }) => {
             />
           </View>
 
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Create secure password (min 6 chars)"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+          </View>
+
           {selectedRole === ROLES.ARTISAN && (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Primary Craft Specialty</Text>
@@ -119,6 +162,7 @@ export const RegisterScreen = ({ navigation, route }) => {
           <Button
             title={`Create ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Account`}
             onPress={handleRegister}
+            loading={loading}
             style={styles.registerBtn}
           />
 

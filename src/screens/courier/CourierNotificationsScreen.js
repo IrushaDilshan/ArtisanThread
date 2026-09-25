@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { ROUTES } from '../../navigation/routes';
 
 // Vector Icon Helpers for Bottom Tab Bar
@@ -87,15 +88,23 @@ const NOTIFICATION_ITEMS = [
 
 export const CourierNotificationsScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState('alerts'); // Alerts active in E10
+  const [activeTab, setActiveTab] = useState('alerts');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
+  // Enforce Alerts tab as active whenever this screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      setActiveTab('alerts');
+    }, [])
+  );
+
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts') {
+      setActiveTab('alerts');
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
@@ -50,14 +51,13 @@ const PrefixIcon = ({ type }) => {
   }
 };
 
-export const CreateAccountScreen = ({ navigation }) => {
+export const CreateAccountScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
 
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(route?.params?.phone || '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('');
 
   // Upload States for ID Card
   const [uploads, setUploads] = useState({
@@ -71,11 +71,28 @@ export const CreateAccountScreen = ({ navigation }) => {
   };
 
   const handleChooseRole = () => {
+    if (!name.trim()) {
+      Alert.alert('Name Required', 'Please enter your full name or studio name to continue.');
+      return;
+    }
+    if (!phone.trim()) {
+      Alert.alert('Phone Required', 'Please enter your mobile phone number.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      Alert.alert('Valid Email Required', 'Please enter a valid email address.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      Alert.alert('Password Required', 'Please enter a password with at least 6 characters.');
+      return;
+    }
+
     navigation?.navigate(ROUTES.AUTH.CHOOSE_ROLE, {
-      name,
-      phone,
-      email,
-      preferredRole: role,
+      name: name.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      password,
     });
   };
 
@@ -150,20 +167,6 @@ export const CreateAccountScreen = ({ navigation }) => {
               secureTextEntry
               value={password}
               onChangeText={setPassword}
-            />
-          </View>
-
-          {/* Role Field */}
-          <View style={styles.inputRow}>
-            <View style={styles.iconBox}>
-              <PrefixIcon type="role" />
-            </View>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Role"
-              placeholderTextColor="#9EA8A6"
-              value={role}
-              onChangeText={setRole}
             />
           </View>
         </View>

@@ -14,12 +14,14 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuth } from '../../context/AuthContext';
 import { ROUTES, ROLES } from '../../navigation/routes';
+import { Alert, ActivityIndicator } from 'react-native';
 
 export const LoginScreen = ({ navigation }) => {
-  const { login } = useAuth();
+  const { login, isLiveBackend } = useAuth();
   const [selectedRole, setSelectedRole] = useState(ROLES.BUYER);
   const [email, setEmail] = useState('curator@artisanthread.com');
-  const [password, setPassword] = useState('••••••••');
+  const [password, setPassword] = useState('password123');
+  const [loading, setLoading] = useState(false);
 
   const rolePills = [
     { key: ROLES.BUYER, label: 'Buyer', icon: '🛍️', desc: 'Shop crafts' },
@@ -34,8 +36,20 @@ export const LoginScreen = ({ navigation }) => {
     if (roleKey === ROLES.COURIER) setEmail('courier.express@artisanthread.com');
   };
 
-  const handleLogin = () => {
-    login(selectedRole);
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Required Fields', 'Please enter your email and password.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await login({ email: email.trim(), password });
+    } catch (err) {
+      Alert.alert('Sign In Failed', err.message || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -122,6 +136,7 @@ export const LoginScreen = ({ navigation }) => {
           <Button
             title={`Enter as ${selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)}`}
             onPress={handleLogin}
+            loading={loading}
             variant="primary"
             style={styles.submitBtn}
           />

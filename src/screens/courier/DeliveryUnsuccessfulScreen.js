@@ -122,11 +122,12 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
   };
 
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts' && navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }

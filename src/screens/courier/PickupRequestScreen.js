@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,41 +8,61 @@ import {
   SafeAreaView,
   StatusBar,
   Linking,
+  Platform,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
+import { courierService } from '../../services/courierService';
 
-// Vector Map Preview Graphic
-const MapPreview = () => (
-  <View style={styles.mapContainer}>
-    {/* Map Terrain Grid & Parks */}
+// Interactive Vector Map Preview Graphic with Route Polyline and Live Markers
+const MapPreview = ({ onOpenMaps, artisanName, pickupCity, pickupStreet, eta = '12 min (4.8 km)' }) => (
+  <TouchableOpacity
+    activeOpacity={0.92}
+    onPress={onOpenMaps}
+    style={styles.mapContainer}
+  >
+    {/* Map Terrain Grid, Water and Parks */}
     <View style={styles.mapCanvas}>
-      {/* Green park patches */}
-      <View style={[styles.mapPark, { top: 12, left: 18, width: 80, height: 45 }]} />
-      <View style={[styles.mapPark, { bottom: 10, right: 30, width: 100, height: 40 }]} />
+      {/* Coastal/River water stream */}
+      <View style={styles.mapWater} />
 
-      {/* Roads & Highways */}
-      <View style={[styles.mapRoadH, { top: 38 }]} />
-      <View style={[styles.mapRoadH, { top: 86 }]} />
-      <View style={[styles.mapRoadV, { left: 90 }]} />
-      <View style={[styles.mapRoadV, { right: 80 }]} />
+      {/* Nature / park patches */}
+      <View style={[styles.mapPark, { top: 16, left: 16, width: 75, height: 42 }]} />
+      <View style={[styles.mapPark, { bottom: 32, right: 28, width: 90, height: 38 }]} />
+
+      {/* Roads Network */}
+      <View style={[styles.mapRoadH, { top: 46 }]} />
+      <View style={[styles.mapRoadH, { top: 104 }]} />
+      <View style={[styles.mapRoadV, { left: 95 }]} />
+      <View style={[styles.mapRoadV, { right: 85 }]} />
       <View style={[styles.mapRoadDiagonal]} />
 
-      {/* Street labels */}
-      <Text style={[styles.mapLabel, { top: 24, left: 24 }]}>ROSE GARDEN</Text>
-      <Text style={[styles.mapLabel, { top: 72, left: 104 }]}>MOORPARK AVE</Text>
-      <Text style={[styles.mapLabel, { top: 48, right: 28 }]}>W SAN CARLOS</Text>
+      {/* Road names & Local landmarks */}
+      <Text style={[styles.mapLabel, { top: 18, left: 105 }]}>A2 GALLE ROAD</Text>
+      <Text style={[styles.mapLabel, { top: 88, left: 24 }]}>{pickupStreet ? pickupStreet.toUpperCase() : 'TEMPLE RD'}</Text>
+      <Text style={[styles.mapLabel, { bottom: 42, right: 34 }]}>{pickupCity ? pickupCity.toUpperCase() : 'PAYAGALA'}</Text>
 
-      {/* Highway shield badges */}
-      <View style={[styles.highwayShield, { bottom: 30, left: 34 }]}>
-        <Text style={styles.highwayNumber}>82</Text>
-      </View>
-      <View style={[styles.highwayShield, { bottom: 20, right: 24 }]}>
-        <Text style={styles.highwayNumber}>280</Text>
+      {/* Dynamic Driving Route Polyline from Courier to Pickup Point */}
+      <View style={styles.routePolyline} />
+      <View style={styles.routePolylineSegment} />
+
+      {/* Courier Marker (Current Location / You are here) */}
+      <View style={styles.courierLocationMarker}>
+        <View style={styles.courierRadarRing} />
+        <View style={styles.courierCenterDot} />
+        <View style={styles.courierLabelPill}>
+          <Text style={styles.courierLabelText}>🛵 You (Courier)</Text>
+        </View>
       </View>
 
-      {/* Red Location Pin in Center */}
-      <View style={styles.centerPinWrapper}>
+      {/* Destination Pin (Artisan Workshop) */}
+      <View style={styles.destinationPinWrapper}>
+        <View style={styles.destinationCallout}>
+          <Text style={styles.destinationCalloutText} numberOfLines={1}>
+            📍 {artisanName || 'Artisan Workshop'}
+          </Text>
+        </View>
         <View style={styles.pinOuter}>
           <View style={styles.pinInnerDot} />
         </View>
@@ -51,11 +71,23 @@ const MapPreview = () => (
       </View>
     </View>
 
-    {/* Floating Top-Right Badge: "GPS pin confirmed" */}
-    <View style={styles.gpsBadge}>
-      <Text style={styles.gpsBadgeText}>GPS pin confirmed</Text>
+    {/* Top-Left Floating Badge: "12 min (4.8 km)" */}
+    <View style={styles.etaBadge}>
+      <Text style={styles.etaBadgeText}>⏱ {eta}</Text>
     </View>
-  </View>
+
+    {/* Top-Right Floating Badge: "GPS pin confirmed" */}
+    <View style={styles.gpsBadge}>
+      <Text style={styles.gpsBadgeText}>🟢 GPS Pin Confirmed</Text>
+    </View>
+
+    {/* Bottom Tap to Open in Google Maps banner */}
+    <View style={styles.openMapsBanner}>
+      <Text style={styles.openMapsBannerText}>
+        🗺️ Tap to open Turn-by-Turn GPS Navigation ↗
+      </Text>
+    </View>
+  </TouchableOpacity>
 );
 
 // Vector Icon Helpers for Bottom Tab Bar
@@ -101,20 +133,48 @@ export const PickupRequestScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('jobs');
   const [hasArrived, setHasArrived] = useState(false);
+  const [deliveryData, setDeliveryData] = useState(null);
+
+  const initialTrackingId = route?.params?.trackingId || 'ATH-9942-PY';
+
+  // Load delivery details dynamically based on selected delivery
+  useEffect(() => {
+    let isMounted = true;
+    courierService.verifyTrackingCode(initialTrackingId).then((del) => {
+      if (isMounted && del) {
+        setDeliveryData(del);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [initialTrackingId]);
+
+  const artisanName = deliveryData?.pickup_address?.name || 'Malsha Maduwanthi';
+  const artisanInitials = artisanName
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'MM';
+  const artisanPhone = deliveryData?.pickup_address?.phone || '077 412 6688';
+  const pickupCity = deliveryData?.pickup_address?.city || 'Payagala';
+  const pickupStreet = deliveryData?.pickup_address?.address_line1 || 'Temple Road';
+  const pickupLat = deliveryData?.pickup_lat || 6.5700;
+  const pickupLng = deliveryData?.pickup_lng || 79.9800;
+  const fragileDetails = deliveryData?.recipient_notes || '2 parcels · 1.4 kg · hand-dyed batik, do not fold';
 
   const artisan = {
-    name: 'Malsha Maduwanthi',
-    initials: 'MM',
-    subtitle: 'Batik & handicraft workshop',
-    phone: '077 412 6688',
+    name: artisanName,
+    initials: artisanInitials,
+    subtitle: deliveryData?.pickup_address?.details || 'Batik & handicraft workshop',
+    phone: artisanPhone,
     address: {
       house: 'No. 142/B',
-      street: 'Temple Road',
-      city: 'Payagala',
-      district: 'Kalutara',
+      street: pickupStreet,
+      city: pickupCity,
+      district: pickupCity === 'Kandy' ? 'Kandy' : pickupCity === 'Kelaniya' ? 'Gampaha' : 'Kalutara',
       postalCode: '12070',
     },
-    fragileDetails: '2 parcels · 1.4 kg · hand-dyed batik, do not fold',
+    fragileDetails: fragileDetails,
   };
 
   const handleCall = () => {
@@ -127,26 +187,53 @@ export const PickupRequestScreen = ({ navigation, route }) => {
     }
   };
 
+  // Launch Google Maps / Device Turn-by-Turn GPS Navigation
   const handleNavigate = () => {
-    // Open maps or route view
-    if (navigation?.navigate) {
-      navigation.navigate(ROUTES.COURIER.ROUTES);
-    }
+    const lat = pickupLat;
+    const lng = pickupLng;
+    const label = encodeURIComponent(`${artisan.name} - Pickup`);
+
+    // Android: Google Navigation intent (starts turn-by-turn navigation directly)
+    const googleNavIntent = `google.navigation:q=${lat},${lng}&mode=d`;
+    // Universal Google Maps directions URL (works on all devices and browsers)
+    const googleWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    // iOS Apple Maps
+    const appleMapsUrl = `maps:0,0?q=${label}@${lat},${lng}`;
+
+    const targetUrl = Platform.OS === 'ios' ? appleMapsUrl : googleNavIntent;
+
+    Linking.canOpenURL(targetUrl)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(targetUrl);
+        }
+        return Linking.openURL(googleWebUrl);
+      })
+      .catch(() => {
+        Linking.openURL(googleWebUrl).catch(() => {
+          Alert.alert('Navigation', 'Unable to launch Google Maps.');
+        });
+      });
   };
 
   const handleArrived = () => {
     setHasArrived(true);
     if (navigation?.navigate) {
-      navigation.navigate(ROUTES.COURIER.SCAN_PARCEL);
+      navigation.navigate(ROUTES.COURIER.SCAN_PARCEL, {
+        trackingId: deliveryData?.tracking_code || initialTrackingId,
+        artisanName: artisan.name,
+        pickupCity: artisan.address.city,
+      });
     }
   };
 
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts' && navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }
@@ -174,7 +261,13 @@ export const PickupRequestScreen = ({ navigation, route }) => {
         showsVerticalScrollIndicator={false}
       >
         {/* Map Preview Container with Pin & GPS Badge */}
-        <MapPreview />
+        <MapPreview
+          onOpenMaps={handleNavigate}
+          artisanName={artisan.name}
+          pickupCity={artisan.address.city}
+          pickupStreet={artisan.address.street}
+          eta="12 min (4.8 km)"
+        />
 
         {/* 2. Artisan Details Card */}
         <View style={styles.card}>
@@ -281,6 +374,7 @@ export const PickupRequestScreen = ({ navigation, route }) => {
               activeOpacity={0.8}
               style={styles.navigateBtn}
             >
+              <Text style={styles.navigateIcon}>🧭</Text>
               <Text style={styles.navigateBtnText}>Navigate</Text>
             </TouchableOpacity>
 
@@ -418,96 +512,183 @@ const styles = StyleSheet.create({
   // 1. Map Preview Container
   // ----------------------------------------------------
   mapContainer: {
-    height: 175,
+    height: 200,
     marginHorizontal: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   mapCanvas: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#F7F8F7',
+    backgroundColor: '#F8FAFC',
+  },
+  mapWater: {
+    position: 'absolute',
+    top: -20,
+    right: -30,
+    width: 140,
+    height: 250,
+    borderRadius: 70,
+    backgroundColor: '#E0F2FE',
+    transform: [{ rotate: '15deg' }],
   },
   mapPark: {
     position: 'absolute',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
   },
   mapRoadH: {
     position: 'absolute',
     left: 0,
     right: 0,
-    height: 9,
+    height: 12,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#E2E8E6',
+    borderTopWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
   mapRoadV: {
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 9,
+    width: 12,
     backgroundColor: '#FFFFFF',
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: '#E2E8E6',
+    borderLeftWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderColor: '#E2E8F0',
   },
   mapRoadDiagonal: {
     position: 'absolute',
     left: -20,
-    top: 40,
-    width: 250,
-    height: 7,
+    top: 55,
+    width: 280,
+    height: 10,
     backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '-25deg' }],
+    transform: [{ rotate: '-22deg' }],
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: '#E2E8E6',
+    borderColor: '#E2E8F0',
   },
   mapLabel: {
     position: 'absolute',
     fontSize: 9,
-    fontWeight: '700',
-    color: '#9CA3AF',
+    fontWeight: '800',
+    color: '#64748B',
     letterSpacing: 0.5,
   },
-  highwayShield: {
+  routePolyline: {
     position: 'absolute',
-    backgroundColor: '#1E40AF',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E53935',
+    left: 45,
+    bottom: 55,
+    width: 130,
+    height: 5,
+    backgroundColor: '#0284C7',
+    borderRadius: 3,
+    transform: [{ rotate: '-35deg' }],
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
   },
-  highwayNumber: {
-    color: '#FFFFFF',
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  centerPinWrapper: {
+  routePolylineSegment: {
     position: 'absolute',
-    top: '46%',
-    left: '50%',
-    marginLeft: -12,
-    marginTop: -24,
+    right: 65,
+    top: 60,
+    width: 80,
+    height: 5,
+    backgroundColor: '#0284C7',
+    borderRadius: 3,
+    transform: [{ rotate: '40deg' }],
+  },
+  courierLocationMarker: {
+    position: 'absolute',
+    bottom: 35,
+    left: 28,
     alignItems: 'center',
+  },
+  courierRadarRing: {
+    position: 'absolute',
+    top: -6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(2, 132, 199, 0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(2, 132, 199, 0.5)',
+  },
+  courierCenterDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#0284C7',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  courierLabelPill: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  courierLabelText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  destinationPinWrapper: {
+    position: 'absolute',
+    top: 32,
+    right: 48,
+    alignItems: 'center',
+  },
+  destinationCallout: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    marginBottom: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+    maxWidth: 160,
+  },
+  destinationCalloutText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#DC2626',
   },
   pinOuter: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#E53935',
+    backgroundColor: '#DC2626',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 3,
+    elevation: 4,
   },
   pinInnerDot: {
     width: 8,
@@ -523,7 +704,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 8,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: '#E53935',
+    borderTopColor: '#DC2626',
     marginTop: -2,
   },
   pinShadow: {
@@ -533,21 +714,61 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.25)',
     marginTop: 1,
   },
+  etaBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  etaBadgeText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
   gpsBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 10,
+    right: 10,
     backgroundColor: '#E6F4EA',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#BBE6C9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   gpsBadgeText: {
     color: '#065F46',
     fontSize: 10,
     fontWeight: '700',
+  },
+  openMapsBanner: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 77, 64, 0.92)',
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openMapsBannerText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   // ----------------------------------------------------
@@ -753,8 +974,13 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#004D40',
     backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+  },
+  navigateIcon: {
+    fontSize: 16,
   },
   navigateBtnText: {
     color: '#004D40',

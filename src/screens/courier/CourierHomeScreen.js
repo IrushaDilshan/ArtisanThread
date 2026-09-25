@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,16 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../../constants/colors';
 import { ROUTES } from '../../navigation/routes';
+import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../../context/AuthContext';
+import { courierService, isSupabaseConfigured } from '../../services';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -67,53 +73,113 @@ const TabIcon = ({ name, active }) => {
 
 export const CourierHomeScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('jobs');
+  const [dbJobs, setDbJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const jobs = [
-    {
-      id: 'job-1',
-      type: 'pickup',
-      borderHighlight: '#F59E0B', // Orange/Amber
-      name: 'Malsha Maduwanthi',
-      subtitle: 'Pickup · Payagala, Kalutara',
-      details: '2 parcels · 1.4 kg',
-      timeBadge: '09:00 - 10:00',
-      timeBadgeBg: '#FEF3C7',
-      timeBadgeText: '#92400E',
-      isFragile: true,
-      actionLabel: 'Start',
-      actionColor: '#00796B',
-    },
-    {
-      id: 'job-2',
-      type: 'delivery',
-      borderHighlight: '#10B981', // Green
-      name: 'Manji Samaranayaka',
-      subtitle: 'Delivery · Colombo 07',
-      details: '1 parcel · COD Rs. 2,500.00',
-      statusBadge: 'In transit',
-      statusBadgeBg: '#D1FAE5',
-      statusBadgeText: '#065F46',
-      actionLabel: 'Continue',
-      actionColor: '#00796B',
-    },
-    {
-      id: 'job-3',
-      type: 'pickup',
-      borderHighlight: '#9CA3AF', // Gray
-      name: 'Nimali Handloom Works',
-      subtitle: 'Pickup · Beruwala',
-      details: '3 parcels · 2.8 kg',
-      statusBadge: 'Scheduled 14:00',
-      statusBadgeBg: '#F3F4F6',
-      statusBadgeText: '#4B5563',
-    },
-  ];
+  const loadCourierJobs = useCallback(async () => {
+    try {
+      const data = await courierService.getAssignedDeliveries(user?.id);
+      if (data && data.length > 0) {
+        const mapped = data.map((d) => {
+          const isPickup = d.status === 'ASSIGNED' || d.status === 'ARRIVED_AT_ARTISAN';
+          const pickupName = d.pickup_address?.name || 'Artisan Workshop';
+          const dropoffName = d.dropoff_address?.name || d.order?.buyer?.full_name || 'Customer Delivery';
+          const cityName = isPickup ? (d.pickup_address?.city || 'Local') : (d.dropoff_address?.city || 'Local');
+          const totalAmount = d.order?.total_amount ? Number(d.order.total_amount) : 0;
+          const isCod = d.order?.payment_status === 'cash_on_delivery' || Boolean(d.recipient_notes?.includes('COD'));
+
+          return {
+            id: d.id,
+            type: isPickup ? 'pickup' : 'delivery',
+            borderHighlight: isPickup ? '#F59E0B' : '#10B981',
+            name: isPickup ? pickupName : dropoffName,
+            subtitle: `${isPickup ? 'Pickup' : 'Delivery'} · ${cityName}`,
+            details: d.pickup_address?.details || d.dropoff_address?.details || `Tracking: ${d.tracking_code}`,
+            statusBadge: d.status.replace(/_/g, ' ').toUpperCase(),
+            statusBadgeBg: isPickup ? '#FEF3C7' : '#D1FAE5',
+            statusBadgeText: isPickup ? '#92400E' : '#065F46',
+            actionLabel: isPickup ? 'Start' : 'Continue',
+            actionColor: '#00796B',
+            isFragile: Boolean(d.recipient_notes?.toLowerCase().includes('fragile')),
+            codAmount: isCod ? totalAmount : 0,
+            trackingId: d.tracking_code,
+          };
+        });
+        setDbJobs(mapped);
+      } else {
+        setDbJobs([]);
+      }
+    } catch (e) {
+      console.warn('Courier fetch error:', e.message);
+      setDbJobs([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id]);
+
+  // Re-fetch live whenever screen gains focus and reset active tab to 'jobs'
+  useFocusEffect(
+    useCallback(() => {
+      setActiveTab('jobs');
+      loadCourierJobs();
+    }, [loadCourierJobs])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadCourierJobs();
+  };
+
+  const handleAssignDemoJobs = async () => {
+    try {
+      setRefreshing(true);
+      await courierService.assignDemoDeliveriesToCourier(user?.id);
+      await loadCourierJobs();
+      Alert.alert(
+        'Deliveries Assigned! 📦',
+        'Database demo deliveries have been connected to your courier account. You can now test the complete courier workflow.'
+      );
+    } catch (e) {
+      Alert.alert('Assignment Error', e.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Strictly real data from database (no mock fallback)
+  const activeJobs = dbJobs;
+  const pickupsCount = activeJobs.filter((j) => j.type === 'pickup').length;
+  const deliveriesCount = activeJobs.filter((j) => j.type === 'delivery').length;
+  const totalCod = activeJobs.reduce((sum, j) => sum + (j.codAmount || 0), 0);
+
+  // Dynamic Date & User metadata
+  const todayDateString = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  const partnerName = user?.name || user?.full_name || 'Kavinda Fernando';
+  const partnerSubtitle = user?.location || user?.metadata?.vehicle || 'Express Delivery Partner · Kalutara route';
+  const avatarInitials = partnerName
+    .split(' ')
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || 'KF';
 
   const handleTabPress = (tabKey) => {
-    setActiveTab(tabKey);
-    if (tabKey === 'route' && navigation?.navigate) {
+    if (tabKey === 'jobs') {
+      setActiveTab('jobs');
+    } else if (tabKey === 'route' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.ROUTES);
+    } else if (tabKey === 'alerts' && navigation?.navigate) {
+      navigation.navigate(ROUTES.COURIER.NOTIFICATIONS);
     } else if (tabKey === 'profile' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.PROFILE);
     }
@@ -127,42 +193,47 @@ export const CourierHomeScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFFFFF" />
+        }
       >
         {/* Dark Green Header Container (#004D40) */}
         <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 16) }]}>
           {/* Date & Partner Identity */}
           <View style={styles.topRow}>
-            <View>
-              <Text style={styles.dateText}>Thursday, 24 July</Text>
-              <Text style={styles.partnerName}>Kavinda Fernando</Text>
-              <Text style={styles.partnerSubtitle}>
-                Express Delivery Partner · Kalutara route
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={styles.dateText}>{todayDateString}</Text>
+              <Text style={styles.partnerName}>{partnerName}</Text>
+              <Text style={styles.partnerSubtitle} numberOfLines={1}>
+                {partnerSubtitle}
               </Text>
             </View>
 
-            {/* Avatar Badge "KF" */}
+            {/* Avatar Badge */}
             <View style={styles.avatarBadge}>
-              <Text style={styles.avatarText}>KF</Text>
+              <Text style={styles.avatarText}>{avatarInitials}</Text>
             </View>
           </View>
 
           {/* 3 Horizontal Stats Cards inside Header */}
           <View style={styles.statsContainer}>
-            {/* Card 1: 6 Pickups */}
+            {/* Card 1: Pickups */}
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>6</Text>
+              <Text style={styles.statValue}>{pickupsCount}</Text>
               <Text style={styles.statLabel}>Pickups</Text>
             </View>
 
-            {/* Card 2: 4 Deliveries */}
+            {/* Card 2: Deliveries */}
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>4</Text>
+              <Text style={styles.statValue}>{deliveriesCount}</Text>
               <Text style={styles.statLabel}>Deliveries</Text>
             </View>
 
-            {/* Card 3: Rs. 2,500 COD to collect (Highlighted in Gold) */}
+            {/* Card 3: COD to collect (Highlighted in Gold) */}
             <View style={styles.statCard}>
-              <Text style={styles.statValueGold}>Rs. 2,500</Text>
+              <Text style={styles.statValueGold}>
+                Rs. {totalCod > 0 ? totalCod.toLocaleString() : '0'}
+              </Text>
               <Text style={styles.statLabel}>COD to collect</Text>
             </View>
           </View>
@@ -181,105 +252,144 @@ export const CourierHomeScreen = ({ navigation }) => {
 
         {/* Job List Cards */}
         <View style={styles.jobsList}>
-          {jobs.map((job) => (
-            <View key={job.id} style={styles.jobCard}>
-              {/* Left colored border highlight */}
-              <View
-                style={[
-                  styles.leftStripe,
-                  { backgroundColor: job.borderHighlight },
-                ]}
-              />
+          {loading && !refreshing ? (
+            <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={{ marginTop: 8, fontSize: 13, color: '#6B7280' }}>
+                Fetching live jobs from Supabase...
+              </Text>
+            </View>
+          ) : activeJobs.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateEmoji}>📦</Text>
+              <Text style={styles.emptyStateTitle}>No jobs in Supabase database yet</Text>
+              <Text style={styles.emptyStateText}>
+                Your app is connected to your live Supabase cloud database! Run the starter seed script in your Supabase SQL Editor to populate sample orders and deliveries.
+              </Text>
+              <TouchableOpacity
+                onPress={onRefresh}
+                style={styles.refreshDbBtn}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.refreshDbText}>↻ Refresh from Supabase</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleAssignDemoJobs}
+                style={[styles.refreshDbBtn, { backgroundColor: '#00796B', marginTop: 10 }]}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.refreshDbText}>⚡ Assign Demo Deliveries to My Account</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            activeJobs.map((job) => (
+              <View key={job.id} style={styles.jobCard}>
+                {/* Left colored border highlight */}
+                <View
+                  style={[
+                    styles.leftStripe,
+                    { backgroundColor: job.borderHighlight },
+                  ]}
+                />
 
-              <View style={styles.cardMain}>
-                {/* Top Row: Name + Badges */}
-                <View style={styles.cardHeaderRow}>
-                  <Text style={styles.customerName}>{job.name}</Text>
+                <View style={styles.cardMain}>
+                  {/* Top Row: Name + Badges */}
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={styles.customerName}>{job.name}</Text>
 
-                  {job.timeBadge && (
-                    <View
-                      style={[
-                        styles.badgePill,
-                        { backgroundColor: job.timeBadgeBg },
-                      ]}
-                    >
-                      <Text
+                    {job.timeBadge && (
+                      <View
                         style={[
-                          styles.badgeText,
-                          { color: job.timeBadgeText },
+                          styles.badgePill,
+                          { backgroundColor: job.timeBadgeBg },
                         ]}
                       >
-                        {job.timeBadge}
-                      </Text>
-                    </View>
-                  )}
+                        <Text
+                          style={[
+                            styles.badgeText,
+                            { color: job.timeBadgeText },
+                          ]}
+                        >
+                          {job.timeBadge}
+                        </Text>
+                      </View>
+                    )}
 
-                  {job.statusBadge && (
-                    <View
-                      style={[
-                        styles.badgePill,
-                        { backgroundColor: job.statusBadgeBg },
-                      ]}
-                    >
-                      <Text
+                    {job.statusBadge && (
+                      <View
                         style={[
-                          styles.badgeText,
-                          { color: job.statusBadgeText },
+                          styles.badgePill,
+                          { backgroundColor: job.statusBadgeBg },
                         ]}
                       >
-                        {job.statusBadge}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Subtitle: Location / Type */}
-                <Text style={styles.jobSubtitle}>{job.subtitle}</Text>
-
-                {/* Details: Parcels & Weight */}
-                <Text style={styles.jobDetails}>{job.details}</Text>
-
-                {/* Bottom Row: Tags & Action */}
-                <View style={styles.cardBottomRow}>
-                  <View style={styles.tagsContainer}>
-                    {job.isFragile && (
-                      <View style={styles.fragileBadge}>
-                        <Text style={styles.fragileText}>Fragile</Text>
+                        <Text
+                          style={[
+                            styles.badgeText,
+                            { color: job.statusBadgeText },
+                          ]}
+                        >
+                          {job.statusBadge}
+                        </Text>
                       </View>
                     )}
                   </View>
 
-                  {job.actionLabel && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (job.id === 'job-1' && navigation?.navigate) {
-                          navigation.navigate(ROUTES.COURIER.PICKUP_REQUEST);
-                        } else if (job.id === 'job-2' && navigation?.navigate) {
-                          navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT);
-                        }
-                      }}
-                      activeOpacity={0.7}
-                      style={styles.actionBtn}
-                    >
-                      <Text
-                        style={[
-                          styles.actionBtnText,
-                          { color: job.actionColor },
-                        ]}
+                  {/* Subtitle: Location / Type */}
+                  <Text style={styles.jobSubtitle}>{job.subtitle}</Text>
+
+                  {/* Details: Parcels & Weight */}
+                  <Text style={styles.jobDetails}>{job.details}</Text>
+
+                  {/* Bottom Row: Tags & Action */}
+                  <View style={styles.cardBottomRow}>
+                    <View style={styles.tagsContainer}>
+                      {job.isFragile && (
+                        <View style={styles.fragileBadge}>
+                          <Text style={styles.fragileText}>Fragile</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {job.actionLabel && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          if (job.type === 'pickup' && navigation?.navigate) {
+                            navigation.navigate(ROUTES.COURIER.PICKUP_REQUEST, {
+                              jobId: job.id,
+                              trackingId: job.trackingId,
+                            });
+                          } else if (navigation?.navigate) {
+                            navigation.navigate(ROUTES.COURIER.DELIVERY_TRANSIT, {
+                              jobId: job.id,
+                              trackingId: job.trackingId,
+                            });
+                          }
+                        }}
+                        activeOpacity={0.7}
+                        style={styles.actionBtn}
                       >
-                        {job.actionLabel}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                        <Text
+                          style={[
+                            styles.actionBtnText,
+                            { color: job.actionColor },
+                          ]}
+                        >
+                          {job.actionLabel}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            ))
+          )}
         </View>
 
         {/* Bottom Status Message */}
         <Text style={styles.statusFooterMessage}>
-          That's every job assigned for today.
+          {activeJobs.length > 0
+            ? `Live connected to Supabase (${activeJobs.length} active jobs)`
+            : 'Connected to Supabase. No active deliveries pending.'}
         </Text>
       </ScrollView>
 
@@ -571,8 +681,46 @@ const styles = StyleSheet.create({
   },
 
   // ----------------------------------------------------
-  // Bottom Status Footer Message
+  // Bottom Status Footer Message & Empty State
   // ----------------------------------------------------
+  emptyStateContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptyStateEmoji: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  refreshDbBtn: {
+    backgroundColor: '#004D40',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+  },
+  refreshDbText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   statusFooterMessage: {
     fontSize: 11,
     color: '#9CA3AF',

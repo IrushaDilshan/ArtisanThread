@@ -5,14 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ROLES } from '../../navigation/routes';
+import { ROLES, ROUTES } from '../../navigation/routes';
 import { useAuth } from '../../context/AuthContext';
+import { authService } from '../../services/authService';
 
 export const ChooseRoleScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { isLiveBackend, logout } = useAuth();
+  const [loading, setLoading] = useState(false);
 
   const initialRole = route?.params?.role || route?.params?.preferredRole || ROLES.ARTISAN;
   const [selectedRole, setSelectedRole] = useState(initialRole);
@@ -20,28 +24,81 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
   const roleOptions = [
     {
       key: ROLES.ARTISAN,
-      title: 'Login as Artisan',
-      desc: 'Master craftsperson & atelier studio',
+      title: 'Artisan (Master Craftsperson)',
+      desc: 'Showcase atelier crafts & manage workshop orders',
     },
     {
       key: ROLES.BUYER,
-      title: 'Login as Buyer',
-      desc: 'Discover & collect unique crafts',
+      title: 'Buyer (Art & Craft Lover)',
+      desc: 'Discover, collect, and purchase unique handcrafted works',
     },
     {
       key: ROLES.COURIER,
-      title: 'Login as Courier person',
-      desc: 'Handle fragile parcel pickups & deliveries',
+      title: 'Courier Partner (Logistics)',
+      desc: 'Handle careful pickups and door-to-door deliveries',
     },
   ];
 
-  const handleRegister = () => {
-    // Complete registration/login and route to the corresponding role dashboard
-    login(selectedRole, {
-      name: route?.params?.name || (selectedRole === ROLES.ARTISAN ? 'Atelier Artisan' : selectedRole === ROLES.COURIER ? 'Courier Partner' : 'Artisan Buyer'),
-      email: route?.params?.email || `${selectedRole}@artisanthread.com`,
-      phone: route?.params?.phone || '000000000',
-    });
+  const handleRegister = async () => {
+    try {
+      setLoading(true);
+      const name = route?.params?.name || (selectedRole === ROLES.ARTISAN ? 'Atelier Artisan' : selectedRole === ROLES.COURIER ? 'Courier Partner' : 'Artisan Buyer');
+      const email = route?.params?.email || `${selectedRole}_${Date.now()}@artisanthread.com`;
+      const phone = route?.params?.phone || route?.params?.phoneNumber || '';
+      const password = route?.params?.password || 'password123';
+
+      if (!isLiveBackend) {
+        Alert.alert('Configuration Error', 'Supabase backend credentials not found in .env.');
+        return;
+      }
+
+      await authService.register({
+        email,
+        password,
+        fullName: name,
+        role: selectedRole,
+        metadata: { phone },
+      });
+
+      logout();
+
+      Alert.alert(
+        'Registration Successful!',
+        `Your ${selectedRole} account has been created. Please sign in with your phone number to access your dashboard.`,
+        [
+          {
+            text: 'Sign In with Phone',
+            onPress: () => {
+              navigation?.navigate(ROUTES.AUTH.WELCOME_BACK, {
+                phone,
+              });
+            },
+          },
+        ]
+      );
+    } catch (err) {
+      if (err.message?.includes('Email not confirmed') || err.message?.includes('confirmed')) {
+        Alert.alert(
+          'Registration Successful!',
+          `Your ${selectedRole} account has been created. Please sign in with your phone number to access your dashboard.`,
+          [
+            {
+              text: 'Sign In with Phone',
+              onPress: () => {
+                navigation?.navigate(ROUTES.AUTH.WELCOME_BACK, {
+                  phone: route?.params?.phone || '',
+                });
+              },
+            },
+          ]
+        );
+        return;
+      }
+      console.warn('Registration error:', err.message);
+      Alert.alert('Registration Failed', err.message || 'Could not complete registration. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -57,7 +114,8 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
       >
         {/* Top Header */}
         <View style={styles.headerSection}>
-          <Text style={styles.title}>Choose Login role</Text>
+          <Text style={styles.title}>Select Your Role</Text>
+          <Text style={styles.subtitle}>Choose how you will participate in ArtisanThread</Text>
         </View>
 
         {/* Role Selection Radio Cards */}
@@ -111,11 +169,18 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
           {/* Bottom-Right "Register" Button */}
           <TouchableOpacity
             onPress={handleRegister}
+            disabled={loading}
             activeOpacity={0.88}
             style={styles.registerBtn}
           >
-            <Text style={styles.sendIcon}>➤</Text>
-            <Text style={styles.registerText}>Register</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.sendIcon}>➤</Text>
+                <Text style={styles.registerText}>Complete Setup</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -142,6 +207,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#111E1C',
     letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    textAlign: 'center',
   },
   optionsContainer: {
     gap: 18,
