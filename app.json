@@ -19,6 +19,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow ArtisanThread to access camera to scan parcel QR codes."
+        }
+      ]
+    ]
   }
 }
