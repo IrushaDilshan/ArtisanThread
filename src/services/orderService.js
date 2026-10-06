@@ -1,5 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 
+const simulatedPaymentStatuses = new Map();
+
 export const orderService = {
   /**
    * Place a new order with items
@@ -81,6 +83,123 @@ export const orderService = {
       .select()
       .single();
 
+    if (error) throw error;
+    return data;
+  },
+
+  /**
+   * Store simulated escrow/refund state without payment credentials.
+   */
+  async updatePaymentStatus(orderId, paymentStatus) {
+    if (!isSupabaseConfigured) {
+      if (orderId) {
+        simulatedPaymentStatuses.set(String(orderId), paymentStatus);
+      }
+      return { id: orderId, payment_status: paymentStatus };
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        payment_status: paymentStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getPaymentStatus(orderId) {
+    if (!orderId) return null;
+
+    if (!isSupabaseConfigured) {
+      return simulatedPaymentStatuses.get(String(orderId)) || null;
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('payment_status')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data?.payment_status || null;
+  },
+
+  async completeSimulatedRefund(orderId) {
+    if (!orderId) return 'REFUNDED';
+
+    if (!isSupabaseConfigured) {
+      const currentStatus = String(
+        simulatedPaymentStatuses.get(String(orderId)) || ''
+      ).toUpperCase();
+      if (currentStatus === 'REFUND_INITIATED') {
+        simulatedPaymentStatuses.set(String(orderId), 'REFUNDED');
+        return 'REFUNDED';
+      }
+      return currentStatus || null;
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({
+        payment_status: 'refunded',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId)
+      .eq('payment_status', 'refund_initiated')
+      .select('payment_status')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.payment_status) {
+      return String(data.payment_status).toUpperCase();
+    }
+
+    return (await this.getPaymentStatus(orderId))?.toUpperCase() || null;
+  },
+
+  /**
+   * Cancel only orders that are still in a buyer-cancellable stage.
+   */
+  async cancelOrder(orderId, paymentStatus) {
+    if (!isSupabaseConfigured) {
+      if (orderId && paymentStatus) {
+        simulatedPaymentStatuses.set(String(orderId), paymentStatus);
+      }
+      return {
+        id: orderId,
+        status: 'CANCELLED',
+        ...(paymentStatus ? { payment_status: paymentStatus } : {}),
+      };
+    }
+
+    const update = {
+      status: 'CANCELLED',
+      updated_at: new Date().toISOString(),
+    };
+    if (paymentStatus) {
+      update.payment_status = paymentStatus;
+    }
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update(update)
+      .eq('id', orderId)
+      .in('status', ['PENDING', 'CONFIRMED', 'CRAFTING'])
+      .select()
+      .single();
+
+    if (error?.code === 'PGRST116') {
+      const cancellationError = new Error(
+        'This order can no longer be cancelled.'
+      );
+      cancellationError.code = 'ORDER_NOT_CANCELLABLE';
+      throw cancellationError;
+    }
     if (error) throw error;
     return data;
   },

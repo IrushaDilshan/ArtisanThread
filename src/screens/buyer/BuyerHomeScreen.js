@@ -17,6 +17,15 @@ import { Card } from '../../components/Card';
 import { RoleSwitcher } from '../../components/RoleSwitcher';
 import { productService, isSupabaseConfigured } from '../../services';
 
+
+
+//change
+import { ROUTES } from '../../navigation/routes';
+
+
+
+
+
 const CATEGORIES = ['All Crafts', 'Textiles', 'Ceramics', 'Woodcraft', 'Metalwork', 'Jewelry'];
 
 export const BuyerHomeScreen = ({ navigation }) => {
@@ -57,15 +66,64 @@ export const BuyerHomeScreen = ({ navigation }) => {
   };
 
   // Strictly maps database items — no fallback mock array
-  const displayedProducts = dbProducts.map((p) => ({
-    id: p.id,
-    title: p.title,
-    artisan: p.profiles?.full_name || 'Master Artisan',
-    region: p.profiles?.location || 'Craft Atelier',
-    price: `$${Number(p.price || 0).toFixed(2)}`,
-    tag: p.category || 'Craft',
-    icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
-  }));
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  //change
+  const displayedProducts =
+  dbProducts.length > 0
+    ? dbProducts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        artisan: p.profiles?.full_name || 'Master Artisan',
+        region: p.profiles?.location || 'Craft Atelier',
+        price: `$${Number(p.price || 0).toFixed(2)}`,
+        tag: p.category || 'Craft',
+        icon:
+          p.category === 'Textiles'
+            ? '🧣'
+            : p.category === 'Ceramics'
+            ? '🫖'
+            : p.category === 'Woodcraft'
+            ? '🪵'
+            : p.category === 'Jewelry'
+            ? '💍'
+            : '✨',
+      }))
+    : [
+        {
+          id: 'demo-product-01',
+          title: 'Handmade Artisan Vase',
+          artisan: 'Demo Master Artisan',
+          region: 'Colombo Craft Atelier',
+          price: '$120.00',
+          tag: 'Ceramics',
+          icon: '🫖',
+        },
+      ];
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   return (
     <View style={styles.container}>
@@ -174,9 +232,52 @@ export const BuyerHomeScreen = ({ navigation }) => {
                 <Text style={styles.productRegion}>{prod.region}</Text>
                 <View style={styles.priceRow}>
                   <Text style={styles.price}>{prod.price}</Text>
-                  <TouchableOpacity style={styles.addBtn}>
-                    <Text style={styles.addBtnText}>+ Add</Text>
-                  </TouchableOpacity>
+                  
+                  
+                  
+                  
+                  
+                  
+                  {/* //change */}
+                  <TouchableOpacity
+  style={styles.addBtn}
+  activeOpacity={0.7}
+  onPress={() => {
+    const numericPrice = Number(
+      String(prod.price).replace(/[^0-9.-]/g, '')
+    );
+
+    navigation.navigate(ROUTES.BUYER.CHECKOUT, {
+      items: [
+        {
+          id: prod.id,
+          productId: prod.id,
+          title: prod.title,
+          price: numericPrice,
+          quantity: 1,
+        },
+      ],
+      shippingAddress: {
+        name: 'Maya Lin',
+        address: 'No. 01, Flower Road',
+        city: 'Colombo',
+        postalCode: '00100',
+      },
+      paymentMethod: 'Secure Escrow Payment',
+      totalAmount: numericPrice,
+      currencySymbol: '$',
+    });
+  }}
+>
+  <Text style={styles.addBtnText}>+ Add</Text>
+</TouchableOpacity>
+
+
+
+
+
+
+
                 </View>
               </Card>
             ))}
