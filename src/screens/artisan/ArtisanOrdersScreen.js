@@ -5,7 +5,6 @@ import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
-import { RoleSwitcher } from '../../components/RoleSwitcher';
 
 const ARTISAN_ORDERS = [
   {
@@ -46,8 +45,6 @@ export const ArtisanOrdersScreen = () => {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <RoleSwitcher />
-
         <View style={styles.list}>
           {ARTISAN_ORDERS.map((ord) => (
             <Card key={ord.id} style={styles.card}>

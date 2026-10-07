@@ -55,7 +55,7 @@ const TabIcon = ({ name, active }) => {
 };
 
 const ROUTE_STOPS = [
-  { step: '1', type: 'Pickup', title: 'Atelier Indigo Crafts', time: '2:15 PM', status: 'Completed' },
+  { step: '1', type: 'Pickup', title: 'Artisan Indigo Crafts', time: '2:15 PM', status: 'Completed' },
   { step: '2', type: 'Pickup', title: 'Oaxaca Woodworks Studio', time: '3:00 PM', status: 'Next Stop' },
   { step: '3', type: 'Drop-off', title: 'Residential Delivery #1', time: '3:45 PM', status: 'Queued' },
   { step: '4', type: 'Drop-off', title: 'Residential Delivery #2', time: '4:30 PM', status: 'Queued' },

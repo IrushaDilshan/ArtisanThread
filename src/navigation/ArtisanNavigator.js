@@ -3,8 +3,8 @@ import { Text, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ROUTES } from './routes';
 import { ArtisanDashboardScreen } from '../screens/artisan/ArtisanDashboardScreen';
-import { ArtisanProductsScreen } from '../screens/artisan/ArtisanProductsScreen';
 import { ArtisanOrdersScreen } from '../screens/artisan/ArtisanOrdersScreen';
+import { ArtisanMessagesScreen } from '../screens/artisan/ArtisanMessagesScreen';
 import { ArtisanProfileScreen } from '../screens/artisan/ArtisanProfileScreen';
 import { COLORS } from '../constants/colors';
 
@@ -26,22 +26,10 @@ export const ArtisanNavigator = () => {
         name={ROUTES.ARTISAN.DASHBOARD}
         component={ArtisanDashboardScreen}
         options={{
-          tabBarLabel: 'Dashboard',
+          tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => (
             <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              📊
-            </Text>
-          ),
-        }}
-      />
-      <Tab.Screen
-        name={ROUTES.ARTISAN.PRODUCTS}
-        component={ArtisanProductsScreen}
-        options={{
-          tabBarLabel: 'My Crafts',
-          tabBarIcon: ({ focused }) => (
-            <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              🏺
+              🏠
             </Text>
           ),
         }}
@@ -50,10 +38,22 @@ export const ArtisanNavigator = () => {
         name={ROUTES.ARTISAN.ORDERS}
         component={ArtisanOrdersScreen}
         options={{
-          tabBarLabel: 'Fulfill',
+          tabBarLabel: 'Orders',
           tabBarIcon: ({ focused }) => (
             <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              ✂️
+              📦
+            </Text>
+          ),
+        }}
+      />
+      <Tab.Screen
+        name={ROUTES.ARTISAN.MESSAGES}
+        component={ArtisanMessagesScreen}
+        options={{
+          tabBarLabel: 'Messages',
+          tabBarIcon: ({ focused }) => (
+            <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
+              💬
             </Text>
           ),
         }}
@@ -62,10 +62,10 @@ export const ArtisanNavigator = () => {
         name={ROUTES.ARTISAN.PROFILE}
         component={ArtisanProfileScreen}
         options={{
-          tabBarLabel: 'Atelier',
+          tabBarLabel: 'Profile',
           tabBarIcon: ({ focused }) => (
             <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              🏛️
+              👤
             </Text>
           ),
         }}

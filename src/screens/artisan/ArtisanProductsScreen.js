@@ -17,7 +17,6 @@ import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
-import { RoleSwitcher } from '../../components/RoleSwitcher';
 import { useAuth } from '../../context/AuthContext';
 import { productService, isSupabaseConfigured } from '../../services';
 
@@ -56,7 +55,7 @@ export const ArtisanProductsScreen = () => {
             id: item.id,
             title: item.title,
             stock: item.stock,
-            price: `$${Number(item.price || 0).toFixed(2)}`,
+            price: `LKR ${Number(item.price || 0).toLocaleString()}`,
             status,
             category: item.category,
           };
@@ -109,7 +108,7 @@ export const ArtisanProductsScreen = () => {
         is_active: true,
       });
 
-      Alert.alert('Success', 'Handcrafted piece added to your atelier catalog!');
+      Alert.alert('Success', 'Handcrafted piece added to your artisan catalog!');
       setTitle('');
       setPrice('');
       setStock('1');
@@ -126,7 +125,7 @@ export const ArtisanProductsScreen = () => {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title="Atelier Catalog"
+        title="Artisan Catalog"
         subtitle="Manage handcrafted pieces and production stock"
       />
 
@@ -137,8 +136,6 @@ export const ArtisanProductsScreen = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        <RoleSwitcher />
-
         <Button
           title="+ Add New Handcrafted Piece"
           variant="primary"
@@ -149,14 +146,14 @@ export const ArtisanProductsScreen = () => {
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Fetching atelier inventory from Supabase...</Text>
+            <Text style={styles.loadingText}>Fetching artisan inventory from Supabase...</Text>
           </View>
         ) : inventory.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyEmoji}>🎨</Text>
             <Text style={styles.emptyTitle}>No Catalog Items Yet</Text>
             <Text style={styles.emptySubtitle}>
-              You haven't listed any handcrafted crafts in your atelier. Tap "+ Add New Handcrafted Piece" above to publish your first piece!
+              You haven't listed any handcrafted crafts in your artisan catalog. Tap "+ Add New Handcrafted Piece" above to publish your first piece!
             </Text>
             <TouchableOpacity onPress={onRefresh} style={styles.emptyRefreshBtn}>
               <Text style={styles.emptyRefreshBtnText}>🔄 Pull to Refresh</Text>
@@ -221,10 +218,10 @@ export const ArtisanProductsScreen = () => {
 
             <View style={styles.rowInputs}>
               <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Price ($) *</Text>
+                <Text style={styles.inputLabel}>Price (LKR) *</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="85.00"
+                  placeholder="8,500"
                   keyboardType="numeric"
                   value={price}
                   onChangeText={setPrice}

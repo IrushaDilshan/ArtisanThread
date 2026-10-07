@@ -25,7 +25,7 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
     {
       key: ROLES.ARTISAN,
       title: 'Artisan (Master Craftsperson)',
-      desc: 'Showcase atelier crafts & manage workshop orders',
+      desc: 'Showcase artisan crafts & manage workshop orders',
     },
     {
       key: ROLES.BUYER,
@@ -42,7 +42,7 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
   const handleRegister = async () => {
     try {
       setLoading(true);
-      const name = route?.params?.name || (selectedRole === ROLES.ARTISAN ? 'Atelier Artisan' : selectedRole === ROLES.COURIER ? 'Courier Partner' : 'Artisan Buyer');
+      const name = route?.params?.name || (selectedRole === ROLES.ARTISAN ? 'Master Artisan' : selectedRole === ROLES.COURIER ? 'Courier Partner' : 'Artisan Buyer');
       const email = route?.params?.email || `${selectedRole}_${Date.now()}@artisanthread.com`;
       const phone = route?.params?.phone || route?.params?.phoneNumber || '';
       const password = route?.params?.password || 'password123';

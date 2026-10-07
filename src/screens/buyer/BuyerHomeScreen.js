@@ -61,8 +61,8 @@ export const BuyerHomeScreen = ({ navigation }) => {
     id: p.id,
     title: p.title,
     artisan: p.profiles?.full_name || 'Master Artisan',
-    region: p.profiles?.location || 'Craft Atelier',
-    price: `$${Number(p.price || 0).toFixed(2)}`,
+    region: p.profiles?.location || 'Craft Workshop',
+    price: `LKR ${Number(p.price || 0).toLocaleString()}`,
     tag: p.category || 'Craft',
     icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
   }));

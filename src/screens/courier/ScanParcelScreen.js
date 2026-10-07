@@ -183,7 +183,7 @@ export const ScanParcelScreen = ({ navigation, route }) => {
   const totalAmount = deliveryData?.order?.total_amount
     ? Number(deliveryData.order.total_amount)
     : 12500;
-  const formattedValue = `Rs. ${totalAmount.toLocaleString()}`;
+  const formattedValue = `LKR ${totalAmount.toLocaleString()}`;
   const fragileNotes =
     deliveryData?.recipient_notes ||
     'Handloom batik · keep flat and dry · Fragile';

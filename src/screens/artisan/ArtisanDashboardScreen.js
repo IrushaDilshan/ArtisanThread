@@ -4,7 +4,6 @@ import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
-import { RoleSwitcher } from '../../components/RoleSwitcher';
 import { useAuth } from '../../context/AuthContext';
 
 export const ArtisanDashboardScreen = () => {
@@ -13,8 +12,8 @@ export const ArtisanDashboardScreen = () => {
   const metrics = [
     { label: 'Active Crafts', val: '24', icon: '🏺' },
     { label: 'Orders Pending', val: '7', icon: '⏳' },
-    { label: 'Monthly Sales', val: '$3,840', icon: '📈' },
-    { label: 'Atelier Rating', val: '4.9★', icon: '✨' },
+    { label: 'Monthly Sales', val: 'LKR 384,000', icon: '📈' },
+    { label: 'Artisan Rating', val: '4.9★', icon: '✨' },
   ];
 
   const recentOrders = [
@@ -25,7 +24,7 @@ export const ArtisanDashboardScreen = () => {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title={user?.atelierName || 'Atelier Dashboard'}
+        title={user?.artisanName || 'Artisan Dashboard'}
         subtitle="Craftsmanship overview & workshop activity"
       />
 
@@ -33,8 +32,6 @@ export const ArtisanDashboardScreen = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <RoleSwitcher />
-
         {/* Metrics Grid */}
         <View style={styles.metricsGrid}>
           {metrics.map((m, idx) => (
@@ -46,7 +43,7 @@ export const ArtisanDashboardScreen = () => {
           ))}
         </View>
 
-        {/* Atelier Craftsmanship Status */}
+        {/* Artisan Craftsmanship Status */}
         <Card style={styles.noticeCard}>
           <Text style={styles.noticeTag}>COURIER PICKUP WINDOW</Text>
           <Text style={styles.noticeTitle}>Courier Scheduled Today at 4:00 PM</Text>
@@ -57,7 +54,7 @@ export const ArtisanDashboardScreen = () => {
 
         {/* Recent Inquiries & Orders */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Atelier Orders To Fulfill</Text>
+          <Text style={styles.sectionTitle}>Artisan Orders To Fulfill</Text>
         </View>
 
         <View style={styles.ordersList}>

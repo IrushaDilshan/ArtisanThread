@@ -5,7 +5,6 @@ import { SPACING } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
-import { RoleSwitcher } from '../../components/RoleSwitcher';
 import { useAuth } from '../../context/AuthContext';
 
 export const ArtisanProfileScreen = () => {
@@ -14,13 +13,11 @@ export const ArtisanProfileScreen = () => {
   return (
     <View style={styles.container}>
       <ScreenHeader
-        title="Atelier Profile"
+        title="Artisan Profile"
         subtitle="Manage master craft verification & payout accounts"
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <RoleSwitcher />
-
         <Card style={styles.card}>
           <View style={styles.avatarRow}>
             <View style={styles.avatar}>
@@ -28,7 +25,7 @@ export const ArtisanProfileScreen = () => {
             </View>
             <View>
               <Text style={styles.name}>{user?.name || 'Master Artisan'}</Text>
-              <Text style={styles.atelier}>{user?.atelierName || 'Heritage Atelier'}</Text>
+              <Text style={styles.artisanSub}>{user?.artisanName || 'Heritage Artisan'}</Text>
               <Text style={styles.badge}>🌿 Certified Traditional Craftsman</Text>
             </View>
           </View>
@@ -55,7 +52,7 @@ export const ArtisanProfileScreen = () => {
         </Card>
 
         <Button
-          title="Sign Out of Atelier"
+          title="Sign Out of Artisan Account"
           variant="outline"
           onPress={logout}
           style={styles.logoutBtn}
@@ -101,7 +98,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
-  atelier: {
+  artisanSub: {
     fontSize: 13,
     color: COLORS.textSecondary,
     marginTop: 2,

@@ -174,7 +174,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
   const totalAmount = deliveryData?.order?.total_amount
     ? Number(deliveryData.order.total_amount)
     : 12500;
-  const formattedCod = `Rs. ${totalAmount.toLocaleString()}`;
+  const formattedCod = `LKR ${totalAmount.toLocaleString()}`;
 
   // Launch Google Maps GPS Turn-by-Turn Navigation to Buyer destination
   const handleNavigate = () => {

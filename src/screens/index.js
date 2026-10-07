@@ -17,6 +17,7 @@ export { BuyerProfileScreen } from './buyer/BuyerProfileScreen';
 export { ArtisanDashboardScreen } from './artisan/ArtisanDashboardScreen';
 export { ArtisanProductsScreen } from './artisan/ArtisanProductsScreen';
 export { ArtisanOrdersScreen } from './artisan/ArtisanOrdersScreen';
+export { ArtisanMessagesScreen } from './artisan/ArtisanMessagesScreen';
 export { ArtisanProfileScreen } from './artisan/ArtisanProfileScreen';
 
 // Courier Screens

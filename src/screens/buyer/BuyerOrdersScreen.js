@@ -14,7 +14,7 @@ const ORDERS = [
     courier: 'Courier Marcus Vance (In Transit)',
     status: 'In Transit',
     eta: 'Tomorrow, 2:30 PM',
-    price: '$84.00',
+    price: 'LKR 8,400',
     progress: 75,
   },
   {
@@ -24,7 +24,7 @@ const ORDERS = [
     courier: 'Awaiting Courier Pickup',
     status: 'Crafting Complete',
     eta: 'Sep 28',
-    price: '$120.00',
+    price: 'LKR 12,000',
     progress: 40,
   },
 ];
