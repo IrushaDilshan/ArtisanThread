@@ -87,6 +87,7 @@ export const ArtisanDashboardScreen = () => {
   // Modal Popup Form State
   const [modalVisible, setModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [itemName, setItemName] = useState('');
   const [itemPrice, setItemPrice] = useState('');
@@ -94,6 +95,12 @@ export const ArtisanDashboardScreen = () => {
   const [itemDescription, setItemDescription] = useState('');
   const [itemSizes, setItemSizes] = useState(['S', 'M', 'L']);
   const [itemPhoto, setItemPhoto] = useState('');
+
+  const filteredInventory = inventory.filter(
+    (item) =>
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   const toggleStock = (id, value) => {
     setInventory((prev) =>
@@ -294,8 +301,31 @@ export const ArtisanDashboardScreen = () => {
           <Text style={styles.sectionHint}>Tap item card to view & edit details</Text>
         </View>
 
+        {/* Inventory Search Bar */}
+        <View style={styles.searchBarContainer}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search inventory crafts..."
+            placeholderTextColor={COLORS.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+              <Text style={styles.clearSearchText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={styles.inventoryList}>
-          {inventory.map((item) => (
+          {filteredInventory.length === 0 ? (
+            <View style={styles.emptySearchContainer}>
+              <Text style={styles.emptySearchEmoji}>🔍</Text>
+              <Text style={styles.emptySearchText}>No crafts match "{searchQuery}"</Text>
+            </View>
+          ) : (
+            filteredInventory.map((item) => (
             <Card key={item.id} style={styles.inventoryCard}>
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -378,7 +408,7 @@ export const ArtisanDashboardScreen = () => {
                 </View>
               </View>
             </Card>
-          ))}
+          )))}
         </View>
 
         {/* Recent Inquiries & Orders */}
@@ -1015,6 +1045,51 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+  },
+
+  // Search Bar Styles
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    padding: 0,
+  },
+  clearSearchBtn: {
+    padding: 4,
+  },
+  clearSearchText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+  },
+  emptySearchContainer: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptySearchEmoji: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  emptySearchText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
 });
 
