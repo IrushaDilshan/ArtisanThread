@@ -1,8 +1,11 @@
 import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+
 import { ROUTES } from './routes';
+
 import { MarketplaceScreen } from '../screens/buyer/MarketplaceScreen';
 import { CartScreen } from '../screens/buyer/CartScreen';
 import { ProductDetailScreen } from '../screens/buyer/ProductDetailScreen';
@@ -10,11 +13,20 @@ import { WishlistScreen } from '../screens/buyer/WishlistScreen';
 import { ChatScreen } from '../screens/buyer/ChatScreen';
 import { OrdersScreen } from '../screens/buyer/OrdersScreen';
 import { BuyerProfileScreen } from '../screens/buyer/BuyerProfileScreen';
+
+import { CheckoutScreen } from '../screens/buyer/CheckoutScreen';
+import { SecureEscrowPaymentScreen } from '../screens/buyer/SecureEscrowPaymentScreen';
+import { PaymentHeldScreen } from '../screens/buyer/PaymentHeldScreen';
+import { OrderStatusScreen } from '../screens/buyer/OrderStatusScreen';
+import { TrackOrderScreen } from '../screens/buyer/TrackOrderScreen';
+import { OrderCancelledScreen } from '../screens/buyer/OrderCancelledScreen';
+
 import { COLORS } from '../constants/colors';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-export const BuyerNavigator = () => {
+const BuyerTabs = () => {
   return (
     <Tab.Navigator
       initialRouteName={ROUTES.BUYER.HOME}
@@ -64,6 +76,7 @@ export const BuyerNavigator = () => {
         component={ChatScreen}
         options={{
           tabBarButton: () => null,
+          tabBarStyle: { display: 'none' },
         }}
       />
       <Tab.Screen
@@ -83,6 +96,55 @@ export const BuyerNavigator = () => {
         }}
       />
     </Tab.Navigator>
+  );
+};
+
+export const BuyerNavigator = () => {
+  return (
+    <Stack.Navigator
+      initialRouteName="BuyerTabs"
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
+      {/* Main Buyer Tabs */}
+      <Stack.Screen
+        name="BuyerTabs"
+        component={BuyerTabs}
+      />
+
+      {/* Member 3 - Checkout */}
+      <Stack.Screen
+        name={ROUTES.BUYER.CHECKOUT}
+        component={CheckoutScreen}
+      />
+
+      {/* Member 3 - Secure Escrow Payment */}
+      <Stack.Screen
+        name={ROUTES.BUYER.SECURE_ESCROW_PAYMENT}
+        component={SecureEscrowPaymentScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.PAYMENT_HELD}
+        component={PaymentHeldScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.ORDER_STATUS}
+        component={OrderStatusScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.TRACK_ORDER}
+        component={TrackOrderScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.ORDER_CANCELLED}
+        component={OrderCancelledScreen}
+      />
+    </Stack.Navigator>
   );
 };
 

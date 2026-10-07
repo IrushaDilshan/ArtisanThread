@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Image,
   TextInput,
   TouchableOpacity,
   RefreshControl,
@@ -15,11 +16,43 @@ import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { RoleSwitcher } from '../../components/RoleSwitcher';
-import { productService, isSupabaseConfigured } from '../../services';
+import { productService } from '../../services';
+import { ROUTES } from '../../navigation/routes';
+import { useAuth } from '../../context/AuthContext';
+
+
 
 const CATEGORIES = ['All Crafts', 'Textiles', 'Ceramics', 'Woodcraft', 'Metalwork', 'Jewelry'];
 
-export const BuyerHomeScreen = ({ navigation }) => {
+const getBuyerAddress = (user) => {
+  const address =
+    user?.shipping_address || user?.shippingAddress || user?.address;
+  if (address) {
+    return address;
+  }
+
+  if (
+    user?.address_line1 ||
+    user?.addressLine1 ||
+    user?.street ||
+    user?.city
+  ) {
+    return {
+      full_name: user.full_name || user.name,
+      address_line1: user.address_line1 || user.addressLine1 || user.street,
+      address_line2: user.address_line2 || user.addressLine2,
+      city: user.city,
+      state: user.state || user.region,
+      postal_code: user.postal_code || user.postalCode,
+      country: user.country,
+    };
+  }
+
+  return null;
+};
+
+export const BuyerHomeScreen = ({ navigation, route }) => {
+  const { user } = useAuth();
   const [selectedCat, setSelectedCat] = useState('All Crafts');
   const [search, setSearch] = useState('');
   const [dbProducts, setDbProducts] = useState([]);
@@ -57,15 +90,40 @@ export const BuyerHomeScreen = ({ navigation }) => {
   };
 
   // Strictly maps database items — no fallback mock array
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  //change
   const displayedProducts = dbProducts.map((p) => ({
-    id: p.id,
-    title: p.title,
-    artisan: p.profiles?.full_name || 'Master Artisan',
-    region: p.profiles?.location || 'Craft Atelier',
-    price: `$${Number(p.price || 0).toFixed(2)}`,
-    tag: p.category || 'Craft',
-    icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
-  }));
+        id: p.id,
+        title: p.title,
+        artisan: p.profiles?.full_name || 'Master Artisan',
+        region: p.profiles?.location || 'Craft Atelier',
+        price: `$${Number(p.price || 0).toFixed(2)}`,
+        unitPrice: Number(p.price),
+        image_url: p.image_url || p.imageUrl || p.image || null,
+        tag: p.category || 'Craft',
+        icon:
+          p.category === 'Textiles'
+            ? '🧣'
+            : p.category === 'Ceramics'
+            ? '🫖'
+            : p.category === 'Woodcraft'
+            ? '🪵'
+            : p.category === 'Jewelry'
+            ? '💍'
+            : '✨',
+      }));
+
+
 
   return (
     <View style={styles.container}>
@@ -164,7 +222,15 @@ export const BuyerHomeScreen = ({ navigation }) => {
             {displayedProducts.map((prod) => (
               <Card key={prod.id} style={styles.productCard}>
                 <View style={styles.productIconContainer}>
-                  <Text style={styles.productEmoji}>{prod.icon}</Text>
+                  {prod.image_url ? (
+                    <Image
+                      source={{ uri: prod.image_url }}
+                      style={styles.productImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Text style={styles.productEmoji}>{prod.icon}</Text>
+                  )}
                 </View>
                 <Text style={styles.productTag}>{prod.tag}</Text>
                 <Text style={styles.productTitle} numberOfLines={2}>
@@ -174,9 +240,67 @@ export const BuyerHomeScreen = ({ navigation }) => {
                 <Text style={styles.productRegion}>{prod.region}</Text>
                 <View style={styles.priceRow}>
                   <Text style={styles.price}>{prod.price}</Text>
-                  <TouchableOpacity style={styles.addBtn}>
+                  
+                  
+                  
+                  
+                  
+                  
+                  {/* //change */}
+                  <TouchableOpacity
+                    style={styles.addBtn}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      const numericPrice = prod.unitPrice;
+                      const params = route?.params || {};
+                      const isEditingCheckout =
+                        params.checkoutEdit === true;
+                      const deliveryFee = Number(
+                        isEditingCheckout
+                          ? params.checkoutDeliveryFee || 0
+                          : 0
+                      );
+
+                      if (isEditingCheckout) {
+                        navigation.setParams({
+                          checkoutEdit: false,
+                          checkoutShippingAddress: undefined,
+                          checkoutPaymentMethod: undefined,
+                          checkoutDeliveryFee: undefined,
+                          checkoutCurrencySymbol: undefined,
+                        });
+                      }
+
+                      navigation.navigate(ROUTES.BUYER.CHECKOUT, {
+                        items: [
+                          {
+                            id: prod.id,
+                            productId: prod.id,
+                            title: prod.title,
+                            image_url: prod.image_url,
+                            icon: prod.icon,
+                            price: numericPrice,
+                            quantity: 1,
+                          },
+                        ],
+                        shippingAddress:
+                          (isEditingCheckout &&
+                            params.checkoutShippingAddress) ||
+                          getBuyerAddress(user),
+                        paymentMethod:
+                          (isEditingCheckout &&
+                            params.checkoutPaymentMethod) ||
+                          'Secure Escrow Payment',
+                        deliveryFee,
+                        totalAmount: numericPrice + deliveryFee,
+                        currencySymbol:
+                          params.checkoutCurrencySymbol || '$',
+                      });
+                    }}
+                  >
                     <Text style={styles.addBtnText}>+ Add</Text>
                   </TouchableOpacity>
+
                 </View>
               </Card>
             ))}
@@ -308,6 +432,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+  },
+  productImage: {
+    height: '100%',
+    width: '100%',
   },
   productEmoji: {
     fontSize: 42,

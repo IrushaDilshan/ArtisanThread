@@ -15,7 +15,14 @@ import { authService } from '../../services/authService';
 
 export const ChooseRoleScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  const { isLiveBackend, logout } = useAuth();
+
+
+  //change
+  const { login } = useAuth();
+  
+  
+  
+  
   const [loading, setLoading] = useState(false);
 
   const initialRole = route?.params?.role || route?.params?.preferredRole || ROLES.ARTISAN;
@@ -39,67 +46,39 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
     },
   ];
 
+
+
+
+
+
+
+
+//change
   const handleRegister = async () => {
-    try {
-      setLoading(true);
-      const name = route?.params?.name || (selectedRole === ROLES.ARTISAN ? 'Atelier Artisan' : selectedRole === ROLES.COURIER ? 'Courier Partner' : 'Artisan Buyer');
-      const email = route?.params?.email || `${selectedRole}_${Date.now()}@artisanthread.com`;
-      const phone = route?.params?.phone || route?.params?.phoneNumber || '';
-      const password = route?.params?.password || 'password123';
+  try {
+    setLoading(true);
 
-      if (!isLiveBackend) {
-        Alert.alert('Configuration Error', 'Supabase backend credentials not found in .env.');
-        return;
-      }
+    console.log('Selected role:', selectedRole);
 
-      await authService.register({
-        email,
-        password,
-        fullName: name,
-        role: selectedRole,
-        metadata: { phone },
-      });
+    await login(selectedRole);
 
-      logout();
+    console.log('Role login completed:', selectedRole);
+  } catch (err) {
+    console.warn('Role login error:', err);
 
-      Alert.alert(
-        'Registration Successful!',
-        `Your ${selectedRole} account has been created. Please sign in with your phone number to access your dashboard.`,
-        [
-          {
-            text: 'Sign In with Phone',
-            onPress: () => {
-              navigation?.navigate(ROUTES.AUTH.WELCOME_BACK, {
-                phone,
-              });
-            },
-          },
-        ]
-      );
-    } catch (err) {
-      if (err.message?.includes('Email not confirmed') || err.message?.includes('confirmed')) {
-        Alert.alert(
-          'Registration Successful!',
-          `Your ${selectedRole} account has been created. Please sign in with your phone number to access your dashboard.`,
-          [
-            {
-              text: 'Sign In with Phone',
-              onPress: () => {
-                navigation?.navigate(ROUTES.AUTH.WELCOME_BACK, {
-                  phone: route?.params?.phone || '',
-                });
-              },
-            },
-          ]
-        );
-        return;
-      }
-      console.warn('Registration error:', err.message);
-      Alert.alert('Registration Failed', err.message || 'Could not complete registration. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    Alert.alert(
+      'Error',
+      err?.message || 'Could not continue with selected role.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
+
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
