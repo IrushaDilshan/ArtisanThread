@@ -13,8 +13,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../../components/Button';
+import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { Card } from '../../components/Card';
 import { COLORS } from '../../constants/colors';
+import { ROUTES } from '../../navigation/routes';
 import { RADIUS, SPACING } from '../../constants/theme';
 import {
   getDemoCourierCoordinate,
@@ -546,7 +548,7 @@ export const TrackOrderScreen = ({ navigation, route }) => {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: Math.max(insets.bottom, SPACING.lg) },
+          { paddingBottom: Math.max(insets.bottom, SPACING.lg) + 72 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -660,6 +662,10 @@ export const TrackOrderScreen = ({ navigation, route }) => {
           />
         ) : null}
       </ScrollView>
+      <BuyerMember3Footer
+        navigation={navigation}
+        activeRoute={ROUTES.BUYER.ORDERS}
+      />
     </View>
   );
 };

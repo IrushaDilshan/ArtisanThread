@@ -1,14 +1,54 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 
 const simulatedPaymentStatuses = new Map();
+const isUuid = (value) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+const isSimulatedOrder = (orderId) =>
+  typeof orderId === 'string' && orderId.startsWith('mock_order_');
 
 export const orderService = {
   /**
    * Place a new order with items
    */
-  async createOrder({ buyerId, items, shippingAddress, totalAmount }) {
-    if (!isSupabaseConfigured) {
-      return { id: `mock_order_${Date.now()}`, status: 'PENDING' };
+  async createOrder({
+    items,
+    shippingAddress,
+    totalAmount,
+    paymentMethod,
+  }) {
+    const isCashOnDelivery = /cash|delivery|cod/i.test(
+      String(paymentMethod || '')
+    );
+    const paymentStatus = isCashOnDelivery ? 'cash_on_delivery' : 'pending';
+    let authenticatedBuyerId = null;
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        throw error;
+      }
+      if (isUuid(data?.session?.user?.id)) {
+        authenticatedBuyerId = data.session.user.id;
+      }
+    }
+
+    if (!authenticatedBuyerId) {
+      const id = `mock_order_${Date.now()}`;
+      simulatedPaymentStatuses.set(id, paymentStatus);
+      return {
+        id,
+        status: 'PENDING',
+        total_amount: totalAmount,
+        shipping_address: shippingAddress,
+        payment_method: isCashOnDelivery
+          ? 'cash_on_delivery'
+          : 'secure_escrow',
+        payment_status: paymentStatus,
+        items,
+      };
     }
 
     const orderNumber = `ATH-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-4)}`;
@@ -19,10 +59,11 @@ export const orderService = {
       .insert([
         {
           order_number: orderNumber,
-          buyer_id: buyerId,
+          buyer_id: authenticatedBuyerId,
           status: 'PENDING',
           total_amount: totalAmount,
           shipping_address: shippingAddress,
+          payment_status: paymentStatus,
         },
       ])
       .select()
@@ -33,7 +74,7 @@ export const orderService = {
     // 2. Insert order items
     const orderItems = items.map((item) => ({
       order_id: order.id,
-      product_id: item.productId,
+      product_id: item.productId || item.id,
       quantity: item.quantity,
       unit_price: item.price,
     }));
@@ -44,21 +85,26 @@ export const orderService = {
 
     if (itemsError) throw itemsError;
 
-    return order;
+    return {
+      ...order,
+      payment_method: isCashOnDelivery
+        ? 'cash_on_delivery'
+        : 'secure_escrow',
+    };
   },
 
   /**
    * Fetch orders for a buyer
    */
   async getBuyerOrders(buyerId) {
-    if (!isSupabaseConfigured) return [];
+    if (!isSupabaseConfigured || !isUuid(buyerId)) return [];
 
     const { data, error } = await supabase
       .from('orders')
       .select(`
         *,
         items:order_items (
-          id, quantity, unit_price,
+          id, product_id, quantity, unit_price,
           product:product_id (title, image_url, category)
         ),
         delivery:deliveries (tracking_code, status, estimated_arrival)
@@ -74,7 +120,9 @@ export const orderService = {
    * Update order status (e.g. from CRAFTING to READY_FOR_PICKUP)
    */
   async updateOrderStatus(orderId, status) {
-    if (!isSupabaseConfigured) return { id: orderId, status };
+    if (!isSupabaseConfigured || isSimulatedOrder(orderId)) {
+      return { id: orderId, status };
+    }
 
     const { data, error } = await supabase
       .from('orders')
@@ -91,7 +139,7 @@ export const orderService = {
    * Store simulated escrow/refund state without payment credentials.
    */
   async updatePaymentStatus(orderId, paymentStatus) {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isSimulatedOrder(orderId)) {
       if (orderId) {
         simulatedPaymentStatuses.set(String(orderId), paymentStatus);
       }
@@ -115,7 +163,7 @@ export const orderService = {
   async getPaymentStatus(orderId) {
     if (!orderId) return null;
 
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isSimulatedOrder(orderId)) {
       return simulatedPaymentStatuses.get(String(orderId)) || null;
     }
 
@@ -132,7 +180,7 @@ export const orderService = {
   async completeSimulatedRefund(orderId) {
     if (!orderId) return 'REFUNDED';
 
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isSimulatedOrder(orderId)) {
       const currentStatus = String(
         simulatedPaymentStatuses.get(String(orderId)) || ''
       ).toUpperCase();
@@ -166,7 +214,7 @@ export const orderService = {
    * Cancel only orders that are still in a buyer-cancellable stage.
    */
   async cancelOrder(orderId, paymentStatus) {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isSimulatedOrder(orderId)) {
       if (orderId && paymentStatus) {
         simulatedPaymentStatuses.set(String(orderId), paymentStatus);
       }

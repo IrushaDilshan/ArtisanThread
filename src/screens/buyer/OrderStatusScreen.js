@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../../components/Button';
+import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { Card } from '../../components/Card';
 import { COLORS } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
@@ -94,10 +95,12 @@ const getTotal = (order, checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount) =>
+const formatMoney = (amount, currencySymbol = 'Rs. ') =>
   amount === null
-    ? 'Rs. —'
-    : `Rs. ${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+    ? `${currencySymbol}—`
+    : `${currencySymbol}${amount.toLocaleString('en-US', {
+        maximumFractionDigits: 2,
+      })}`;
 
 const getFirstItem = (order, checkout) => {
   const items = Array.isArray(checkout?.items)
@@ -205,6 +208,37 @@ export const OrderStatusScreen = ({ navigation, route }) => {
   const itemImage = getItemImage(item);
   const title = order.title || getItemTitle(item);
   const total = useMemo(() => getTotal(order, checkout), [order, checkout]);
+  const paymentMethodValue =
+    payment.payment_method ||
+    payment.method ||
+    order.payment_method ||
+    checkout.paymentMethod ||
+    '';
+  const paymentStatusValue = String(
+    payment.payment_status || payment.status || order.payment_status || ''
+  ).toUpperCase();
+  const isCashOnDelivery =
+    /cash|delivery|cod/i.test(String(paymentMethodValue)) ||
+    paymentStatusValue === 'CASH_ON_DELIVERY';
+  const paymentMethodLabel = isCashOnDelivery
+    ? 'Cash on Delivery'
+    : paymentMethodValue
+      ? 'Secure Escrow Payment'
+      : hasEscrowHeldPayment(payment, order)
+        ? 'Secure Escrow Payment'
+        : 'Not provided';
+  const paymentStatusLabel = isCashOnDelivery
+    ? 'Pending'
+    : hasEscrowHeldPayment(payment, order)
+      ? 'Held in Escrow'
+      : paymentStatusValue === 'REFUND_INITIATED'
+        ? 'Refund Initiated'
+        : paymentStatusValue === 'REFUNDED'
+          ? 'Refunded'
+          : paymentStatusValue === 'CONFIRMED' ||
+              paymentStatusValue === 'PAID'
+            ? 'Confirmed'
+            : 'Pending';
   const orderNumber =
     order.order_number || order.orderNumber || order.id || '0xT23456';
   const orderId = order.id;
@@ -420,7 +454,7 @@ export const OrderStatusScreen = ({ navigation, route }) => {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: Math.max(insets.bottom, SPACING.lg) },
+          { paddingBottom: Math.max(insets.bottom, SPACING.lg) + 72 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -438,8 +472,25 @@ export const OrderStatusScreen = ({ navigation, route }) => {
             <Text numberOfLines={2} style={styles.productTitle}>
               {title}
             </Text>
-            <Text style={styles.productPrice}>{formatMoney(total)}</Text>
+            <Text style={styles.productPrice}>
+              {formatMoney(total, checkout.currencySymbol || 'Rs. ')}
+            </Text>
             <Text style={styles.orderNumber}>Order {orderNumber}</Text>
+          </View>
+        </Card>
+
+        <Card style={styles.paymentCard}>
+          <View style={styles.paymentSummaryRow}>
+            <Text style={styles.paymentSummaryLabel}>Payment Method</Text>
+            <Text style={styles.paymentSummaryValue}>
+              {paymentMethodLabel}
+            </Text>
+          </View>
+          <View style={styles.paymentSummaryRow}>
+            <Text style={styles.paymentSummaryLabel}>Payment Status</Text>
+            <Text style={styles.paymentSummaryValue}>
+              {paymentStatusLabel}
+            </Text>
           </View>
         </Card>
 
@@ -462,7 +513,11 @@ export const OrderStatusScreen = ({ navigation, route }) => {
             return (
               <TimelineStep
                 key={step.status}
-                step={step}
+                step={
+                  isCashOnDelivery && step.status === 'CONFIRMED'
+                    ? { ...step, title: 'Order Confirmed' }
+                    : step
+                }
                 state={state}
                 isLast={
                   index === visibleSteps.length - 1 &&
@@ -498,18 +553,22 @@ export const OrderStatusScreen = ({ navigation, route }) => {
           </View>
         ) : null}
 
-        <Button
-          title="Track Order"
-          onPress={handleTrackOrder}
-          style={styles.actionButton}
-        />
-        <Button
-          title="Cancel Order"
-          onPress={handleCancelOrder}
-          disabled={cancelling}
-          style={styles.cancelButton}
-          loading={cancelling}
-        />
+        {currentStatus !== 'CANCELLED' ? (
+          <>
+            <Button
+              title="Track Order"
+              onPress={handleTrackOrder}
+              style={styles.actionButton}
+            />
+            <Button
+              title="Cancel Order"
+              onPress={handleCancelOrder}
+              disabled={cancelling}
+              style={styles.cancelButton}
+              loading={cancelling}
+            />
+          </>
+        ) : null}
         {!canCancelOrder && currentStatus !== 'CANCELLED' ? (
           <Text style={styles.cancelHint}>
             Orders cannot be cancelled after preparation is complete.
@@ -519,6 +578,11 @@ export const OrderStatusScreen = ({ navigation, route }) => {
           Order and escrow status are simulated for this application.
         </Text>
       </ScrollView>
+
+      <BuyerMember3Footer
+        navigation={navigation}
+        activeRoute={ROUTES.BUYER.ORDERS}
+      />
 
       <Modal
         animationType="fade"
@@ -610,6 +674,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.md,
     padding: SPACING.md,
+  },
+  paymentCard: {
+    gap: SPACING.sm,
+    padding: SPACING.md,
+  },
+  paymentSummaryRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+  },
+  paymentSummaryLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+  },
+  paymentSummaryValue: {
+    color: COLORS.textPrimary,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
   },
   productImage: {
     backgroundColor: COLORS.background,

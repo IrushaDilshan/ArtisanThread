@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   ScrollView,
@@ -11,10 +12,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../components/Button';
+import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { Card } from '../../components/Card';
 import { COLORS } from '../../constants/colors';
+import { useAuth } from '../../context/AuthContext';
 import { RADIUS, SPACING } from '../../constants/theme';
 import { ROUTES } from '../../navigation/routes';
+import { orderService } from '../../services/orderService';
 
 const toAmount = (value) => {
   if (typeof value === 'number') {
@@ -117,17 +121,49 @@ const RadioChoice = ({ selected, title, subtitle, onPress }) => (
 
 export const CheckoutScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const params = route?.params || {};
   const [items, setItems] = useState(() => normalizeItems(params.items));
   const [address, setAddress] = useState(() =>
-    formatAddress(params.shippingAddress)
+    formatAddress(
+      params.shippingAddress ??
+        user?.shipping_address ??
+        user?.shippingAddress ??
+        user?.address ??
+        (user?.address_line1 || user?.addressLine1 || user?.street
+          ? {
+              full_name: user.full_name || user.name,
+              address_line1:
+                user.address_line1 || user.addressLine1 || user.street,
+              address_line2: user.address_line2 || user.addressLine2,
+              city: user.city,
+              state: user.state || user.region,
+              postal_code: user.postal_code || user.postalCode,
+              country: user.country,
+            }
+          : null)
+    )
   );
   const [paymentChoice, setPaymentChoice] = useState(() =>
     normalizePaymentChoice(params.paymentMethod)
   );
   const [showValidation, setShowValidation] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editValue, setEditValue] = useState('');
+
+  useEffect(() => {
+    if (params.items) {
+      setItems(normalizeItems(params.items));
+      setShowValidation(false);
+    }
+    if (params.shippingAddress !== undefined) {
+      setAddress(formatAddress(params.shippingAddress));
+    }
+    if (params.paymentMethod !== undefined) {
+      setPaymentChoice(normalizePaymentChoice(params.paymentMethod));
+    }
+  }, [params.items, params.paymentMethod, params.shippingAddress]);
 
   const itemTotal = useMemo(
     () =>
@@ -165,6 +201,22 @@ export const CheckoutScreen = ({ navigation, route }) => {
     setEditValue(String(items[index].quantity));
   };
 
+  const returnToProductSelection = () => {
+    navigation.navigate('BuyerTabs', {
+      screen: ROUTES.BUYER.HOME,
+      params: {
+        checkoutEdit: true,
+        checkoutShippingAddress: address,
+        checkoutPaymentMethod:
+          paymentChoice === 'cash'
+            ? 'Cash on Delivery'
+            : 'Secure Escrow Payment',
+        checkoutDeliveryFee: deliveryFee,
+        checkoutCurrencySymbol: currencySymbol,
+      },
+    });
+  };
+
   const openAddressEditor = () => {
     setEditing({ type: 'address' });
     setEditValue(address);
@@ -187,24 +239,75 @@ export const CheckoutScreen = ({ navigation, route }) => {
     setEditing(null);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    if (submitting) {
+      return;
+    }
     setShowValidation(true);
     if (missingFields.length > 0) {
       return;
     }
 
-    navigation.navigate(ROUTES.BUYER.SECURE_ESCROW_PAYMENT, {
-      checkout: {
-        items,
-        shippingAddress: address,
-        paymentMethod: paymentChoice,
-        paymentType: paymentChoice,
-        itemTotal,
-        deliveryFee,
-        totalAmount,
-        currencySymbol,
-      },
+    const paymentMethod =
+      paymentChoice === 'cash'
+        ? 'Cash on Delivery'
+        : 'Secure Escrow Payment';
+    const paymentStatus =
+      paymentChoice === 'cash' ? 'cash_on_delivery' : 'pending';
+    const checkoutItems = items.map((item) => {
+      const checkoutItem = { ...item };
+      delete checkoutItem.valid;
+      return {
+        ...checkoutItem,
+        productId: checkoutItem.productId || checkoutItem.id,
+      };
     });
+    const checkout = {
+      items: checkoutItems,
+      shippingAddress: address,
+      paymentMethod,
+      paymentType: paymentChoice,
+      itemTotal,
+      deliveryFee,
+      totalAmount,
+      currencySymbol,
+    };
+
+    setSubmitting(true);
+    try {
+      const order = await orderService.createOrder({
+        items: checkoutItems,
+        shippingAddress: address,
+        totalAmount,
+        paymentMethod,
+      });
+      const orderWithPayment = {
+        ...order,
+        payment_method: paymentChoice === 'cash' ? 'cash_on_delivery' : 'secure_escrow',
+        payment_status: order?.payment_status || paymentStatus,
+      };
+      const payment = {
+        method: paymentMethod,
+        payment_method: orderWithPayment.payment_method,
+        status: paymentStatus.toUpperCase(),
+        payment_status: paymentStatus,
+        order_status: orderWithPayment.status || 'PENDING',
+      };
+
+      navigation.navigate(
+        paymentChoice === 'cash'
+          ? ROUTES.BUYER.ORDER_STATUS
+          : ROUTES.BUYER.SECURE_ESCROW_PAYMENT,
+        { checkout, order: orderWithPayment, payment }
+      );
+    } catch (error) {
+      Alert.alert(
+        'Unable to place order',
+        error?.message || 'Please try again.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -230,14 +333,22 @@ export const CheckoutScreen = ({ navigation, route }) => {
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom, SPACING.lg) + 72 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.sectionStack}>
           {items.length > 0 ? (
             items.map((item, index) => {
               const imageUrl =
-                item.image_url || item.imageUrl || item.product?.image_url;
+                item.image_url ||
+                item.imageUrl ||
+                item.image ||
+                item.product?.image_url ||
+                item.product?.imageUrl ||
+                item.product?.image;
               return (
                 <Card key={item.id || item.productId || `${item.title}-${index}`} style={styles.itemCard}>
                   {imageUrl ? (
@@ -245,7 +356,7 @@ export const CheckoutScreen = ({ navigation, route }) => {
                   ) : (
                     <View style={styles.productImageFallback}>
                       <Text style={styles.productFallbackIcon}>
-                        {item.icon || '🧵'}
+                        {item.icon || item.product?.icon || '🧵'}
                       </Text>
                     </View>
                   )}
@@ -264,10 +375,17 @@ export const CheckoutScreen = ({ navigation, route }) => {
                   </View>
                   <TouchableOpacity
                     accessibilityRole="button"
-                    onPress={() => openItemEditor(index)}
+                    onPress={returnToProductSelection}
                     style={styles.editButton}
                   >
                     <Text style={styles.editButtonText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    onPress={() => openItemEditor(index)}
+                    style={styles.quantityButton}
+                  >
+                    <Text style={styles.editButtonText}>Qty</Text>
                   </TouchableOpacity>
                 </Card>
               );
@@ -377,12 +495,19 @@ export const CheckoutScreen = ({ navigation, route }) => {
         <Button
           title="Continue"
           onPress={handleContinue}
+          loading={submitting}
+          disabled={submitting}
           style={styles.continueButton}
         />
         <Text style={styles.footerNote}>
           No payment is processed on this screen.
         </Text>
       </ScrollView>
+
+      <BuyerMember3Footer
+        navigation={navigation}
+        activeRoute={ROUTES.BUYER.HOME}
+      />
 
       <Modal
         animationType="fade"
@@ -555,6 +680,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 44,
     paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+  },
+  quantityButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.textSecondary,
+    borderRadius: RADIUS.sm,
+    justifyContent: 'center',
+    marginLeft: SPACING.xs,
+    minWidth: 38,
+    paddingHorizontal: SPACING.xs,
     paddingVertical: 6,
   },
   editButtonText: {

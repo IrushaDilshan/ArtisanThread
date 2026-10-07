@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -13,12 +14,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../../components/Button';
+import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { Card } from '../../components/Card';
 import { COLORS } from '../../constants/colors';
 import { RADIUS, SPACING } from '../../constants/theme';
 import { ROUTES } from '../../navigation/routes';
 import { orderService } from '../../services/orderService';
-import { isSupabaseConfigured } from '../../services/supabase';
 
 const toAmount = (value) => {
   if (typeof value === 'number') {
@@ -55,12 +56,12 @@ const getCheckoutTotal = (checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount) => {
+const formatMoney = (amount, currencySymbol = 'Rs. ') => {
   if (amount === null) {
     return 'Not provided';
   }
 
-  return `Rs. ${amount.toLocaleString('en-US', {
+  return `${currencySymbol}${amount.toLocaleString('en-US', {
     maximumFractionDigits: 2,
   })}`;
 };
@@ -133,6 +134,7 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [errors, setErrors] = useState({});
   const [processing, setProcessing] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
   const timeoutRef = useRef(null);
 
   useEffect(
@@ -216,47 +218,52 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
       };
 
       try {
-        if (
-          incomingOrder.id &&
-          isSupabaseConfigured &&
-          incomingStatus === 'PENDING'
-        ) {
+        if (incomingOrder.id && incomingStatus === 'PENDING') {
           const updatedOrder = await orderService.updateOrderStatus(
             incomingOrder.id,
             'CONFIRMED'
           );
-          await orderService.updatePaymentStatus(
+          const updatedPayment = await orderService.updatePaymentStatus(
             incomingOrder.id,
             'held'
           );
-          confirmedOrder = { ...confirmedOrder, ...updatedOrder };
+          confirmedOrder = {
+            ...confirmedOrder,
+            ...updatedOrder,
+            ...updatedPayment,
+          };
           confirmedOrder.payment_status = 'held';
         }
 
-        navigation.navigate(ROUTES.BUYER.PAYMENT_HELD, {
-          checkout,
-          order: confirmedOrder,
-          payment: {
-            ...(route?.params?.payment || {}),
-            status: 'HELD',
-            payment_status: 'HELD',
-            order_status: confirmedOrder.status,
-          },
-          cardLast4: digits.slice(-4),
-        });
         setCardNumber('');
         setExpiry('');
         setCvv('');
+        setPaymentSuccess(true);
+        timeoutRef.current = setTimeout(() => {
+          navigation.navigate(ROUTES.BUYER.PAYMENT_HELD, {
+            checkout,
+            order: confirmedOrder,
+            payment: {
+              ...(route?.params?.payment || {}),
+              method: 'Secure Escrow Payment',
+              payment_method: 'secure_escrow',
+              status: 'HELD',
+              payment_status: 'HELD',
+              order_status: confirmedOrder.status,
+            },
+            cardLast4: digits.slice(-4),
+          });
+          timeoutRef.current = null;
+        }, 1000);
       } catch (error) {
         setProcessing(false);
         Alert.alert(
           'Unable to confirm order',
           error?.message || 'Please try again.'
         );
-      } finally {
         timeoutRef.current = null;
       }
-    }, 900);
+    }, 2000);
   };
 
   return (
@@ -280,7 +287,7 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: Math.max(insets.bottom, SPACING.lg) },
+          { paddingBottom: Math.max(insets.bottom, SPACING.lg) + 72 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -320,7 +327,9 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
                   Payment held securely in escrow
                 </Text>
               </View>
-              <Text style={styles.totalAmount}>{formatMoney(orderTotal)}</Text>
+              <Text style={styles.totalAmount}>
+                {formatMoney(orderTotal, checkout?.currencySymbol || 'Rs. ')}
+              </Text>
             </Card>
 
             <View style={styles.section}>
@@ -438,21 +447,45 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
               ) : null}
             </View>
 
-            <Button
-              title={processing ? 'Processing...' : 'Continue Payment'}
-              loading={processing}
-              disabled={processing}
-              onPress={handleContinue}
-              size="large"
-              style={styles.fullButton}
-            />
+            {paymentSuccess ? (
+              <View
+                accessibilityLiveRegion="polite"
+                style={styles.successState}
+              >
+                <Text style={styles.successTitle}>✓ Payment Successful</Text>
+                <Text style={styles.successCopy}>
+                  Your payment has been securely held in escrow.
+                </Text>
+              </View>
+            ) : (
+              <Button
+                title={
+                  processing ? 'Processing Payment...' : 'Continue Payment'
+                }
+                icon={
+                  processing ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : null
+                }
+                disabled={processing}
+                onPress={handleContinue}
+                size="large"
+                style={styles.fullButton}
+                textStyle={processing ? styles.processingButtonText : undefined}
+              />
+            )}
             <Text style={styles.simulationNote}>
-              Simulated escrow flow only. No money will be charged or
-              transferred.
+              Your payment is securely held in escrow until order completion.
             </Text>
           </>
         )}
       </ScrollView>
+      <BuyerMember3Footer
+        navigation={navigation}
+        activeRoute={ROUTES.BUYER.HOME}
+        confirmBeforeLeave={!processing && !paymentSuccess}
+        paymentInProgress={processing}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -684,6 +717,27 @@ const styles = StyleSheet.create({
   },
   fullButton: {
     width: '100%',
+  },
+  processingButtonText: {
+    color: COLORS.primary,
+  },
+  successState: {
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    width: '100%',
+  },
+  successTitle: {
+    color: COLORS.success,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  successCopy: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: SPACING.xs,
+    textAlign: 'center',
   },
   simulationNote: {
     color: COLORS.textMuted,

@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../../components/Button';
+import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { COLORS } from '../../constants/colors';
 import { RADIUS, SPACING } from '../../constants/theme';
 import { ROUTES } from '../../navigation/routes';
@@ -48,10 +49,12 @@ const getCheckoutTotal = (checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount) =>
+const formatMoney = (amount, currencySymbol = 'Rs. ') =>
   amount === null
     ? 'Not provided'
-    : `Rs. ${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+    : `${currencySymbol}${amount.toLocaleString('en-US', {
+        maximumFractionDigits: 2,
+      })}`;
 
 const BellIcon = () => (
   <View accessible accessibilityLabel="Notification" style={styles.bellIcon}>
@@ -88,6 +91,8 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
       checkout,
       payment: {
         ...(route?.params?.payment || {}),
+        method: 'Secure Escrow Payment',
+        payment_method: 'secure_escrow',
         status: 'HELD',
         payment_status: 'HELD',
         order_status: orderStatus,
@@ -115,7 +120,7 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: Math.max(insets.bottom, SPACING.lg) },
+          { paddingBottom: Math.max(insets.bottom, SPACING.lg) + 72 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -125,7 +130,9 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
           </View>
 
           <Text style={styles.successTitle}>Payment Received!</Text>
-          <Text style={styles.totalAmount}>{formatMoney(orderTotal)}</Text>
+          <Text style={styles.totalAmount}>
+            {formatMoney(orderTotal, checkout?.currencySymbol || 'Rs. ')}
+          </Text>
 
           <View style={styles.statusPill}>
             <Text style={styles.statusText}>HELD</Text>
@@ -157,8 +164,7 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
         </View>
 
         <Text style={styles.simulationNote}>
-          Simulated payment status only. No money has been charged or
-          transferred.
+          Your payment is securely held in escrow until order completion.
         </Text>
 
         <Button
@@ -168,6 +174,10 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
           style={styles.actionButton}
         />
       </ScrollView>
+      <BuyerMember3Footer
+        navigation={navigation}
+        activeRoute={ROUTES.BUYER.ORDERS}
+      />
     </View>
   );
 };
@@ -275,7 +285,8 @@ const styles = StyleSheet.create({
   cardSummary: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: SPACING.sm,
+    justifyContent: 'center',
     marginTop: SPACING.md,
     maxWidth: 400,
     width: '100%',
