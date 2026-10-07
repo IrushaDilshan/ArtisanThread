@@ -11,6 +11,7 @@ export { ForgotPasswordScreen } from './auth/ForgotPasswordScreen';
 // Buyer Screens
 export { BuyerHomeScreen } from './buyer/BuyerHomeScreen';
 export { BuyerOrdersScreen } from './buyer/BuyerOrdersScreen';
+export { OrdersScreen } from './buyer/OrdersScreen';
 export { BuyerProfileScreen } from './buyer/BuyerProfileScreen';
 
 // Artisan Screens

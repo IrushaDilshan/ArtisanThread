@@ -20,6 +20,10 @@ export const ROUTES = {
   BUYER: {
     ROOT: 'BuyerRoot',
     HOME: 'BuyerHome',
+    CART: 'BuyerCart',
+    PRODUCT_DETAIL: 'BuyerProductDetail',
+    WISHLIST: 'BuyerWishlist',
+    CHAT: 'BuyerChat',
     ORDERS: 'BuyerOrders',
     PROFILE: 'BuyerProfile',
   },
