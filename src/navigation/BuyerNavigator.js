@@ -1,9 +1,14 @@
 import React from 'react';
-import { Text, Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { ROUTES } from './routes';
-import { BuyerHomeScreen } from '../screens/buyer/BuyerHomeScreen';
-import { BuyerOrdersScreen } from '../screens/buyer/BuyerOrdersScreen';
+import { MarketplaceScreen } from '../screens/buyer/MarketplaceScreen';
+import { CartScreen } from '../screens/buyer/CartScreen';
+import { ProductDetailScreen } from '../screens/buyer/ProductDetailScreen';
+import { WishlistScreen } from '../screens/buyer/WishlistScreen';
+import { ChatScreen } from '../screens/buyer/ChatScreen';
+import { OrdersScreen } from '../screens/buyer/OrdersScreen';
 import { BuyerProfileScreen } from '../screens/buyer/BuyerProfileScreen';
 import { COLORS } from '../constants/colors';
 
@@ -13,6 +18,7 @@ export const BuyerNavigator = () => {
   return (
     <Tab.Navigator
       initialRouteName={ROUTES.BUYER.HOME}
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
@@ -23,26 +29,49 @@ export const BuyerNavigator = () => {
     >
       <Tab.Screen
         name={ROUTES.BUYER.HOME}
-        component={BuyerHomeScreen}
+        component={MarketplaceScreen}
         options={{
-          tabBarLabel: 'Marketplace',
-          tabBarIcon: ({ focused }) => (
-            <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              🛍️
-            </Text>
-          ),
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name={ROUTES.BUYER.CART}
+        component={CartScreen}
+        options={{
+          tabBarLabel: 'Cart',
+          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name={ROUTES.BUYER.PRODUCT_DETAIL}
+        component={ProductDetailScreen}
+        options={{
+          tabBarButton: () => null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tab.Screen
+        name={ROUTES.BUYER.WISHLIST}
+        component={WishlistScreen}
+        options={{
+          tabBarButton: () => null,
+          tabBarStyle: { display: 'none' },
+        }}
+      />
+      <Tab.Screen
+        name={ROUTES.BUYER.CHAT}
+        component={ChatScreen}
+        options={{
+          tabBarButton: () => null,
         }}
       />
       <Tab.Screen
         name={ROUTES.BUYER.ORDERS}
-        component={BuyerOrdersScreen}
+        component={OrdersScreen}
         options={{
-          tabBarLabel: 'Shipments',
-          tabBarIcon: ({ focused }) => (
-            <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              📦
-            </Text>
-          ),
+          tabBarLabel: 'Orders',
+          tabBarIcon: ({ color, size }) => <Ionicons name="cube-outline" color={color} size={size} />,
         }}
       />
       <Tab.Screen
@@ -50,11 +79,7 @@ export const BuyerNavigator = () => {
         component={BuyerProfileScreen}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ focused }) => (
-            <Text style={[styles.tabEmoji, focused && styles.tabEmojiFocused]}>
-              👤
-            </Text>
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
         }}
       />
     </Tab.Navigator>
@@ -70,18 +95,7 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 24 : 10,
     paddingTop: 8,
   },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  tabEmoji: {
-    fontSize: 20,
-    opacity: 0.6,
-  },
-  tabEmojiFocused: {
-    opacity: 1,
-    transform: [{ scale: 1.15 }],
-  },
+  tabLabel: { fontSize: 10, fontWeight: '600' },
 });
 
 export default BuyerNavigator;
