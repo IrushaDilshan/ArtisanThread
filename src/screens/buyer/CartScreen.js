@@ -89,13 +89,17 @@ export const CartScreen = ({ navigation, route }) => {
 
 	const proceedToCheckout = () => {
 		if (cartItems.length === 0) {
-			Alert.alert('Your cart is empty', 'Add a handmade piece before continuing to checkout.');
+			Alert.alert(
+				'Your cart is empty',
+				'Add a handmade piece before continuing to checkout.'
+			);
 			return;
 		}
-		Alert.alert('Secure checkout', `Your order total is ${formatLkr(total)}. Your payment will be protected with escrow.`, [
-			{ text: 'Continue shopping', style: 'cancel' },
-			{ text: 'Continue', onPress: () => navigation?.navigate?.(ROUTES.BUYER.ORDERS) },
-		]);
+
+		navigation?.navigate?.(ROUTES.BUYER.CHECKOUT, {
+			items: cartItems,
+			totalAmount: total,
+		});
 	};
 
 	const renderCartItem = (item) => (
