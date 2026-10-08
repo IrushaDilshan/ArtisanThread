@@ -20,8 +20,18 @@ export const ROUTES = {
   BUYER: {
     ROOT: 'BuyerRoot',
     HOME: 'BuyerHome',
+    CART: 'BuyerCart',
+    PRODUCT_DETAIL: 'BuyerProductDetail',
+    WISHLIST: 'BuyerWishlist',
+    CHAT: 'BuyerChat',
     ORDERS: 'BuyerOrders',
     PROFILE: 'BuyerProfile',
+    CHECKOUT: 'BuyerCheckout',
+    SECURE_ESCROW_PAYMENT: 'SecureEscrowPaymentScreen',
+    PAYMENT_HELD: 'BuyerPaymentHeld',
+    ORDER_STATUS: 'BuyerOrderStatus',
+    TRACK_ORDER: 'BuyerTrackOrder',
+    ORDER_CANCELLED: 'BuyerOrderCancelled',
   },
 
   // Role: Artisan
