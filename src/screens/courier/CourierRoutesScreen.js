@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -89,7 +90,7 @@ export const CourierRoutesScreen = ({ navigation }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header Bar */}
-      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerBar, Platform.OS === 'android' && { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -97,7 +98,7 @@ export const CourierRoutesScreen = ({ navigation }) => {
         >
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Route Optimizer</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>Route Optimizer</Text>
         <View style={styles.headerRightSpacer} />
       </View>
 
@@ -222,11 +223,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAF9',
   },
   headerBar: {
-    height: 56,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
@@ -234,19 +236,20 @@ const styles = StyleSheet.create({
   backButton: {
     width: 36,
     height: 36,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
   backArrow: {
-    fontSize: 28,
-    color: '#1F2937',
+    fontSize: 32,
+    color: '#111E1C',
     fontWeight: '300',
-    lineHeight: 30,
+    marginTop: -4,
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1F2937',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111E1C',
+    letterSpacing: -0.2,
   },
   headerRightSpacer: {
     width: 36,
