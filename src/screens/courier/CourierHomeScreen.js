@@ -203,7 +203,14 @@ export const CourierHomeScreen = ({ navigation }) => {
           <View style={styles.topRow}>
             <View style={{ flex: 1, paddingRight: 10 }}>
               <Text style={styles.dateText}>{todayDateString}</Text>
-              <Text style={styles.partnerName}>{partnerName}</Text>
+              <Text
+                style={styles.partnerName}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {partnerName}
+              </Text>
               <Text style={styles.partnerSubtitle} numberOfLines={1}>
                 {partnerSubtitle}
               </Text>
@@ -219,22 +226,39 @@ export const CourierHomeScreen = ({ navigation }) => {
           <View style={styles.statsContainer}>
             {/* Card 1: Pickups */}
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{pickupsCount}</Text>
-              <Text style={styles.statLabel}>Pickups</Text>
+              <Text
+                style={styles.statValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {pickupsCount}
+              </Text>
+              <Text style={styles.statLabel} numberOfLines={1}>Pickups</Text>
             </View>
 
             {/* Card 2: Deliveries */}
             <View style={styles.statCard}>
-              <Text style={styles.statValue}>{deliveriesCount}</Text>
-              <Text style={styles.statLabel}>Deliveries</Text>
+              <Text
+                style={styles.statValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {deliveriesCount}
+              </Text>
+              <Text style={styles.statLabel} numberOfLines={1}>Deliveries</Text>
             </View>
 
             {/* Card 3: COD to collect (Highlighted in Gold) */}
             <View style={styles.statCard}>
-              <Text style={styles.statValueGold}>
+              <Text
+                style={styles.statValueGold}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
                 Rs. {totalCod > 0 ? totalCod.toLocaleString() : '0'}
               </Text>
-              <Text style={styles.statLabel}>COD to collect</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>COD to collect</Text>
             </View>
           </View>
         </View>
@@ -295,7 +319,13 @@ export const CourierHomeScreen = ({ navigation }) => {
                 <View style={styles.cardMain}>
                   {/* Top Row: Name + Badges */}
                   <View style={styles.cardHeaderRow}>
-                    <Text style={styles.customerName}>{job.name}</Text>
+                    <Text
+                      style={styles.customerName}
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {job.name}
+                    </Text>
 
                     {job.timeBadge && (
                       <View
@@ -309,6 +339,9 @@ export const CourierHomeScreen = ({ navigation }) => {
                             styles.badgeText,
                             { color: job.timeBadgeText },
                           ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
                         >
                           {job.timeBadge}
                         </Text>
@@ -327,6 +360,9 @@ export const CourierHomeScreen = ({ navigation }) => {
                             styles.badgeText,
                             { color: job.statusBadgeText },
                           ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
                         >
                           {job.statusBadge}
                         </Text>
@@ -335,10 +371,14 @@ export const CourierHomeScreen = ({ navigation }) => {
                   </View>
 
                   {/* Subtitle: Location / Type */}
-                  <Text style={styles.jobSubtitle}>{job.subtitle}</Text>
+                  <Text style={styles.jobSubtitle} numberOfLines={1}>
+                    {job.subtitle}
+                  </Text>
 
                   {/* Details: Parcels & Weight */}
-                  <Text style={styles.jobDetails}>{job.details}</Text>
+                  <Text style={styles.jobDetails} numberOfLines={2} ellipsizeMode="tail">
+                    {job.details}
+                  </Text>
 
                   {/* Bottom Row: Tags & Action */}
                   <View style={styles.cardBottomRow}>
@@ -533,35 +573,36 @@ const styles = StyleSheet.create({
   // Stats Container
   statsContainer: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
+    gap: 8,
+    marginTop: 18,
   },
   statCard: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: '#00382E',
     borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: 'flex-start',
     justifyContent: 'center',
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.2,
   },
   statValueGold: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     color: '#F59E0B', // Highlighted in yellow/gold
     letterSpacing: -0.3,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#80CBC4',
     marginTop: 3,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 
   // ----------------------------------------------------
@@ -622,22 +663,32 @@ const styles = StyleSheet.create({
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   customerName: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: '700',
     color: '#111E1C',
     letterSpacing: -0.2,
+    lineHeight: 20,
+    marginRight: 4,
   },
   badgePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3.5,
-    borderRadius: 12,
+    flexShrink: 0,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    maxWidth: '48%',
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   jobSubtitle: {
     fontSize: 12,
@@ -656,9 +707,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   tagsContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexWrap: 'wrap',
+    marginRight: 8,
   },
   fragileBadge: {
     backgroundColor: '#FEE2E2',
@@ -672,8 +726,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actionBtn: {
-    paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    flexShrink: 0,
   },
   actionBtnText: {
     fontSize: 14,

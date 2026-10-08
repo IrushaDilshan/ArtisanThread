@@ -11,7 +11,12 @@ import {
   Switch,
   Alert,
   PanResponder,
+  Image,
+  Modal,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 import { courierService } from '../../services/courierService';
@@ -148,8 +153,85 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   // Cash on delivery collected toggle
   const [isCodCollected, setIsCodCollected] = useState(true);
 
-  // Photo upload state
-  const [photoTaken, setPhotoTaken] = useState(false);
+  // Photo upload proof state
+  const [photoUri, setPhotoUri] = useState(null);
+  const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [isPhotoLoading, setIsPhotoLoading] = useState(false);
+
+  const handleLaunchCamera = async () => {
+    try {
+      setPhotoModalVisible(false);
+      setIsPhotoLoading(true);
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Camera Permission Needed',
+          'Camera access is required to take a handover photo. Please allow camera access in your device settings.',
+          [{ text: 'OK' }]
+        );
+        setIsPhotoLoading(false);
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.warn('Camera capture notice:', err);
+      Alert.alert('Camera Error', 'Could not open camera: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsPhotoLoading(false);
+    }
+  };
+
+  const handleLaunchGallery = async () => {
+    try {
+      setPhotoModalVisible(false);
+      setIsPhotoLoading(true);
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Gallery Permission Needed',
+          'Media library access is required to select a handover photo.',
+          [{ text: 'OK' }]
+        );
+        setIsPhotoLoading(false);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.warn('Gallery upload notice:', err);
+      Alert.alert('Gallery Error', 'Could not open gallery: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsPhotoLoading(false);
+    }
+  };
+
+  const handleUseDemoPhoto = () => {
+    setPhotoModalVisible(false);
+    setPhotoUri('https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800&auto=format&fit=crop&q=80');
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoUri(null);
+  };
 
   // Signature drawing state (refs prevent closure drops and re-render glitches)
   const strokesRef = useRef([]);
@@ -262,7 +344,8 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
     const isOtpFilled = otp.length === 4;
 
     // Validate delivery proof
-    if (!isOtpFilled && !hasAnySignature && !photoTaken) {
+    const hasPhoto = Boolean(photoUri);
+    if (!isOtpFilled && !hasAnySignature && !hasPhoto) {
       Alert.alert(
         'Proof Required',
         'Please enter the 4-digit buyer delivery code, obtain a recipient signature, or take a handover photo before marking as delivered.',
@@ -272,7 +355,9 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
     }
 
     // Update delivery status to DELIVERED in database / local state
-    courierService.updateDeliveryStatus(trackingId, 'DELIVERED').catch(() => {});
+    courierService.updateDeliveryStatus(trackingId, 'DELIVERED', {
+      proof_photo_url: photoUri,
+    }).catch(() => {});
 
     Alert.alert(
       'Delivery Completed! 🎉',
@@ -309,7 +394,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Section */}
-      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerContainer, Platform.OS === 'android' && { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -445,42 +530,71 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
         <View style={styles.sectionBlock}>
           <Text style={styles.sectionTitle}>Photo of the handover</Text>
 
-          <TouchableOpacity
-            onPress={() => setPhotoTaken(!photoTaken)}
-            activeOpacity={0.85}
-            style={[
-              styles.dashedPhotoCard,
-              photoTaken && styles.dashedPhotoCardDone,
-            ]}
-          >
-            {photoTaken ? (
-              <View style={styles.photoPreviewCard}>
-                <View style={styles.photoPreviewTop}>
+          {photoUri ? (
+            <View style={styles.photoContainerDone}>
+              <View style={styles.photoImageWrapper}>
+                <Image
+                  source={{ uri: photoUri }}
+                  style={styles.previewImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.photoOverlayBadgeRow}>
                   <View style={styles.photoProofTag}>
                     <Text style={styles.photoProofTagText}>✓ Proof Attached</Text>
                   </View>
-                  <Text style={styles.photoRetakeAction}>📷 Tap to retake</Text>
+                  <TouchableOpacity
+                    onPress={() => setPhotoModalVisible(true)}
+                    activeOpacity={0.75}
+                    style={styles.photoRetakeChip}
+                  >
+                    <Text style={styles.photoRetakeChipText}>🔄 Change</Text>
+                  </TouchableOpacity>
                 </View>
+              </View>
 
-                <View style={styles.photoMetaBox}>
+              <View style={styles.photoMetaBar}>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.photoMetaTitle}>📦 Handover verified at doorstep</Text>
                   <Text style={styles.photoMetaSub}>
                     {recipient.address} · Today at {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                 </View>
+                <TouchableOpacity
+                  onPress={handleRemovePhoto}
+                  activeOpacity={0.7}
+                  style={styles.photoRemoveBtn}
+                >
+                  <Text style={styles.photoRemoveBtnText}>🗑️</Text>
+                </TouchableOpacity>
               </View>
-            ) : (
-              <>
-                <View style={styles.cameraCircle}>
-                  <Text style={styles.cameraIcon}>📷</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setPhotoModalVisible(true)}
+              activeOpacity={0.85}
+              style={styles.dashedPhotoCard}
+            >
+              {isPhotoLoading ? (
+                <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                  <ActivityIndicator size="small" color="#00796B" />
+                  <Text style={[styles.photoSubText, { marginTop: 8 }]}>Opening camera...</Text>
                 </View>
-                <Text style={styles.photoMainText}>Take a photo</Text>
-                <Text style={styles.photoSubText}>
-                  Needed when nobody signs for the parcel
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
+              ) : (
+                <>
+                  <View style={styles.cameraCircle}>
+                    <Text style={styles.cameraIcon}>📷</Text>
+                  </View>
+                  <Text style={styles.photoMainText}>Take a photo</Text>
+                  <Text style={styles.photoSubText}>
+                    Needed when nobody signs for the parcel
+                  </Text>
+                  <View style={styles.photoActionBadge}>
+                    <Text style={styles.photoActionBadgeText}>📸 Camera or 🖼️ Upload Gallery</Text>
+                  </View>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* 6. Recipient Digital Signature Box with Interactive Drawing Pad */}
@@ -629,6 +743,79 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* 9. Photo Selection / Capture Action Sheet Modal */}
+      <Modal
+        visible={photoModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPhotoModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.photoModalOverlay}
+          activeOpacity={1}
+          onPress={() => setPhotoModalVisible(false)}
+        >
+          <View style={styles.photoModalSheet}>
+            <View style={styles.modalDragHandle} />
+
+            <Text style={styles.photoModalTitle}>Photo of Handover</Text>
+            <Text style={styles.photoModalSubtitle}>
+              Capture doorstep proof or upload an image from your device.
+            </Text>
+
+            <TouchableOpacity
+              onPress={handleLaunchCamera}
+              activeOpacity={0.8}
+              style={styles.photoModalOptionBtn}
+            >
+              <View style={[styles.photoModalOptionIconCircle, { backgroundColor: '#E0F2FE' }]}>
+                <Text style={{ fontSize: 20 }}>📸</Text>
+              </View>
+              <View style={styles.photoModalOptionTextSide}>
+                <Text style={styles.photoModalOptionTitle}>Take Photo</Text>
+                <Text style={styles.photoModalOptionDesc}>Open phone camera to snap parcel handover</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleLaunchGallery}
+              activeOpacity={0.8}
+              style={styles.photoModalOptionBtn}
+            >
+              <View style={[styles.photoModalOptionIconCircle, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={{ fontSize: 20 }}>🖼️</Text>
+              </View>
+              <View style={styles.photoModalOptionTextSide}>
+                <Text style={styles.photoModalOptionTitle}>Upload from Gallery</Text>
+                <Text style={styles.photoModalOptionDesc}>Choose an existing image from phone library</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleUseDemoPhoto}
+              activeOpacity={0.8}
+              style={styles.photoModalOptionBtn}
+            >
+              <View style={[styles.photoModalOptionIconCircle, { backgroundColor: '#DCFCE7' }]}>
+                <Text style={{ fontSize: 20 }}>⚡</Text>
+              </View>
+              <View style={styles.photoModalOptionTextSide}>
+                <Text style={styles.photoModalOptionTitle}>Use Sample Delivery Photo</Text>
+                <Text style={styles.photoModalOptionDesc}>Quick test proof for emulator / testing</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setPhotoModalVisible(false)}
+              activeOpacity={0.8}
+              style={styles.photoModalCancelBtn}
+            >
+              <Text style={styles.photoModalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -851,6 +1038,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 8,
   },
+  photoActionBadge: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  photoActionBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00796B',
+  },
   dashedPhotoCardDone: {
     borderColor: '#10B981',
     borderStyle: 'solid',
@@ -879,20 +1078,42 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 2,
   },
-  photoPreviewCard: {
-    width: '100%',
-    paddingHorizontal: 12,
+  photoContainerDone: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    overflow: 'hidden',
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  photoPreviewTop: {
+  photoImageWrapper: {
+    position: 'relative',
+    width: '100%',
+    height: 180,
+    backgroundColor: '#E5E7EB',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoOverlayBadgeRow: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
   photoProofTag: {
     backgroundColor: '#10B981',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   photoProofTagText: {
@@ -900,17 +1121,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  photoRetakeAction: {
+  photoRetakeChip: {
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  photoRetakeChipText: {
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '700',
-    color: '#004D40',
   },
-  photoMetaBox: {
-    backgroundColor: '#FFFFFF',
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
+  photoMetaBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#F0FDF4',
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
   },
   photoMetaTitle: {
     fontSize: 12,
@@ -921,6 +1150,96 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#047857',
     marginTop: 2,
+  },
+  photoRemoveBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  photoRemoveBtnText: {
+    fontSize: 14,
+  },
+
+  // Modal Sheet Styles
+  photoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  photoModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+  modalDragHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  photoModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111E1C',
+    letterSpacing: -0.3,
+  },
+  photoModalSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  photoModalOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  photoModalOptionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  photoModalOptionTextSide: {
+    flex: 1,
+  },
+  photoModalOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111E1C',
+  },
+  photoModalOptionDesc: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  photoModalCancelBtn: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  photoModalCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
   },
 
   // ----------------------------------------------------

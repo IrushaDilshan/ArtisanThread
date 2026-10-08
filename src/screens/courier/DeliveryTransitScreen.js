@@ -83,17 +83,29 @@ const NavigationMapPreview = ({
 
     {/* Floating Top-Left ETA Badge: "ETA 11:20 · 8.4 km" */}
     <View style={styles.etaBadge}>
-      <Text style={styles.etaBadgeText}>⏱ ETA {eta}</Text>
+      <Text style={styles.etaBadgeText} numberOfLines={1}>⏱ ETA {eta}</Text>
     </View>
 
     {/* Floating Top-Right Live GPS Badge */}
     <View style={styles.gpsBadge}>
-      <Text style={styles.gpsBadgeText}>🟢 GPS Live Navigation</Text>
+      <Text
+        style={styles.gpsBadgeText}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+      >
+        🟢 Live GPS
+      </Text>
     </View>
 
     {/* Bottom Tap to Open in Google Maps banner */}
     <View style={styles.openMapsBanner}>
-      <Text style={styles.openMapsBannerText}>
+      <Text
+        style={styles.openMapsBannerText}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
         🗺️ Tap to open Turn-by-Turn GPS Navigation ↗
       </Text>
     </View>
@@ -240,7 +252,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Bar with Back Button & Tracking ID */}
-      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerContainer, Platform.OS === 'android' && { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -271,8 +283,20 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
             <Text style={styles.noticeCheckmark}>✓</Text>
           </View>
           <View style={styles.noticeTextContainer}>
-            <Text style={styles.noticeTitle}>Buyer notified by SMS and in-app</Text>
-            <Text style={styles.noticeSubtitle}>
+            <Text
+              style={styles.noticeTitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.9}
+            >
+              Buyer notified by SMS and in-app
+            </Text>
+            <Text
+              style={styles.noticeSubtitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
               Sent to {buyerPhone ? `${buyerPhone.slice(0, 3)} *** ${buyerPhone.slice(-4)}` : '077 *** 4567'} at 09:41:06
             </Text>
           </View>
@@ -323,8 +347,20 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
 
         {/* 4. Cash on Delivery (COD) Collection Box */}
         <View style={styles.codCard}>
-          <Text style={styles.codTitle}>Collect {formattedCod} on delivery</Text>
-          <Text style={styles.codSubtitle}>
+          <Text
+            style={styles.codTitle}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            Collect {formattedCod} on delivery
+          </Text>
+          <Text
+            style={styles.codSubtitle}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
             Cash on delivery · exact change preferred
           </Text>
         </View>
@@ -351,7 +387,14 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
               style={styles.navigateBtn}
             >
               <Text style={styles.navigateIcon}>🧭</Text>
-              <Text style={styles.navigateBtnText}>Navigate</Text>
+              <Text
+                style={styles.navigateBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                Navigate
+              </Text>
             </TouchableOpacity>
 
             {/* Middle: Call buyer */}
@@ -360,7 +403,15 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
               activeOpacity={0.8}
               style={styles.callBuyerBtn}
             >
-              <Text style={styles.callBuyerBtnText}>📞 Call buyer</Text>
+              <Text style={styles.callBuyerIcon}>📞</Text>
+              <Text
+                style={styles.callBuyerBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                Call buyer
+              </Text>
             </TouchableOpacity>
 
             {/* Right: I've arrived */}
@@ -372,7 +423,12 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
                 hasArrived && styles.arrivedBtnDone,
               ]}
             >
-              <Text style={styles.arrivedBtnText}>
+              <Text
+                style={styles.arrivedBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
                 {hasArrived ? "✓ Arrived" : "I've arrived"}
               </Text>
             </TouchableOpacity>
@@ -948,11 +1004,12 @@ const styles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     marginTop: 4,
   },
   navigateBtn: {
     flex: 1,
+    minWidth: 0,
     height: 48,
     borderRadius: 24,
     borderWidth: 1.5,
@@ -961,38 +1018,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    paddingHorizontal: 6,
+    gap: 3,
   },
   navigateIcon: {
-    fontSize: 14,
+    fontSize: 13,
   },
   navigateBtnText: {
     color: '#004D40',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   callBuyerBtn: {
-    flex: 1,
+    flex: 1.05,
+    minWidth: 0,
     height: 48,
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: '#004D40',
     backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
+    gap: 3,
+  },
+  callBuyerIcon: {
+    fontSize: 13,
   },
   callBuyerBtnText: {
     color: '#004D40',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   arrivedBtn: {
-    flex: 1.2,
+    flex: 1.15,
+    minWidth: 0,
     height: 48,
     borderRadius: 24,
     backgroundColor: '#004D40',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 6,
     shadowColor: '#004D40',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -1004,8 +1073,9 @@ const styles = StyleSheet.create({
   },
   arrivedBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
   },
 
   // ----------------------------------------------------

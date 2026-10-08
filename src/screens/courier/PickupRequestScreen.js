@@ -73,17 +73,29 @@ const MapPreview = ({ onOpenMaps, artisanName, pickupCity, pickupStreet, eta = '
 
     {/* Top-Left Floating Badge: "12 min (4.8 km)" */}
     <View style={styles.etaBadge}>
-      <Text style={styles.etaBadgeText}>⏱ {eta}</Text>
+      <Text style={styles.etaBadgeText} numberOfLines={1}>⏱ {eta}</Text>
     </View>
 
     {/* Top-Right Floating Badge: "GPS pin confirmed" */}
     <View style={styles.gpsBadge}>
-      <Text style={styles.gpsBadgeText}>🟢 GPS Pin Confirmed</Text>
+      <Text
+        style={styles.gpsBadgeText}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+      >
+        🟢 GPS Confirmed
+      </Text>
     </View>
 
     {/* Bottom Tap to Open in Google Maps banner */}
     <View style={styles.openMapsBanner}>
-      <Text style={styles.openMapsBannerText}>
+      <Text
+        style={styles.openMapsBannerText}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
         🗺️ Tap to open Turn-by-Turn GPS Navigation ↗
       </Text>
     </View>
@@ -244,7 +256,7 @@ export const PickupRequestScreen = ({ navigation, route }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header Bar with Back Button */}
-      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerBar, Platform.OS === 'android' && { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -375,7 +387,14 @@ export const PickupRequestScreen = ({ navigation, route }) => {
               style={styles.navigateBtn}
             >
               <Text style={styles.navigateIcon}>🧭</Text>
-              <Text style={styles.navigateBtnText}>Navigate</Text>
+              <Text
+                style={styles.navigateBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                Navigate
+              </Text>
             </TouchableOpacity>
 
             {/* Right Button: I've arrived */}
@@ -387,7 +406,12 @@ export const PickupRequestScreen = ({ navigation, route }) => {
                 hasArrived && styles.arrivedBtnDone,
               ]}
             >
-              <Text style={styles.arrivedBtnText}>
+              <Text
+                style={styles.arrivedBtnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
                 {hasArrived ? "✓ Arrived" : "I've arrived"}
               </Text>
             </TouchableOpacity>
@@ -851,12 +875,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 4,
+    gap: 8,
   },
   addressLabel: {
     fontSize: 12,
     color: '#9CA3AF',
+    flexShrink: 0,
   },
   addressValue: {
+    flex: 1,
     fontSize: 12,
     fontWeight: '700',
     color: '#111E1C',
@@ -964,11 +991,12 @@ const styles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
     marginTop: 4,
   },
   navigateBtn: {
     flex: 1,
+    minWidth: 0,
     height: 48,
     borderRadius: 24,
     borderWidth: 1.5,
@@ -977,23 +1005,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    paddingHorizontal: 8,
+    gap: 4,
   },
   navigateIcon: {
-    fontSize: 16,
+    fontSize: 15,
   },
   navigateBtnText: {
     color: '#004D40',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    flexShrink: 1,
   },
   arrivedBtn: {
     flex: 1,
+    minWidth: 0,
     height: 48,
     borderRadius: 24,
     backgroundColor: '#004D40',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
     shadowColor: '#004D40',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
@@ -1005,8 +1037,9 @@ const styles = StyleSheet.create({
   },
   arrivedBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
+    textAlign: 'center',
   },
 
   // 7. Bottom Navigation Bar

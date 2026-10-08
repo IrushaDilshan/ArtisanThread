@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -200,7 +201,7 @@ export const CourierProfileScreen = ({ navigation }) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Bar with Back Arrow and Centered Title */}
-      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerContainer, Platform.OS === 'android' && { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
