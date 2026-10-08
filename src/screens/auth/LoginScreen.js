@@ -25,7 +25,7 @@ export const LoginScreen = ({ navigation }) => {
 
   const rolePills = [
     { key: ROLES.BUYER, label: 'Buyer', icon: '🛍️', desc: 'Shop crafts' },
-    { key: ROLES.ARTISAN, label: 'Artisan', icon: '🎨', desc: 'Manage atelier' },
+    { key: ROLES.ARTISAN, label: 'Artisan', icon: '🎨', desc: 'Manage crafts' },
     { key: ROLES.COURIER, label: 'Courier', icon: '📦', desc: 'Deliver goods' },
   ];
 
