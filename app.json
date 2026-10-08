@@ -26,6 +26,14 @@
         {
           "cameraPermission": "Allow ArtisanThread to access camera to scan parcel QR codes."
         }
+      ],
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow ArtisanThread to access your photos to attach delivery proof.",
+          "cameraPermission": "Allow ArtisanThread to access your camera to take delivery proof photos."
+        }
       ]
     ]
   }
