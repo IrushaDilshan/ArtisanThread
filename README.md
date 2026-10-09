@@ -52,7 +52,7 @@ This project was engineered as a collaborative team endeavor, partitioned into d
 | Subsystem / Module | Team Member | Student ID / Role | Branch Reference | Key Deliverables |
 | :--- | :--- | :--- | :--- | :--- |
 | **Module A:** Universal Onboarding & Auth | **Irusha Dilshan** | `IT23768758`<br>*(Project Lead)* | `feature/group-a-onboarding` | Dynamic vector onboarding (A1/A2/A3), Multi-role selector, OTP validation, Supabase Auth session engine |
-| **Module B:** Buyer Marketplace & Catalog | **Group Member B** | *(Contributor)* | `feature/group-b-buyer` | Curated handicraft catalog, Category filters, Real-time search, Buyer profile, Order tracking |
+| **Module B:** Buyer Marketplace & Catalog | **Sandunika A.H.T.L.** | *IT23798830* | `feature/group-b-buyer` | Curated handicraft catalog, Category filters, Real-time search, Buyer profile, Order tracking |
 | **Module C:** Checkout, Escrow & Orders | **Group Member C** | *(Contributor)* | `feature/group-c-checkout-escrow` | Secure cart & checkout, Escrow status state machine, Transaction logs, Order itemization |
 | **Module D:** Artisan Atelier & Inventory | **Group Member D** | *(Contributor)* | `feature/group-d-artisan` | Workshop metrics, Inventory creator/editor, Low-stock alerts, Dispatch preparation |
 | **Logistics Suite:** Eco Express Courier | **Collaborative Core** | *(Team Cross-Functional)* | `development` / `main` | Camera parcel scanner (`expo-camera`), Live delivery transit, Signature pad (`PanResponder`), Geolocation fix |
