@@ -313,7 +313,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
     initials: buyerInitials,
     address: buyerAddress,
     phoneTag: buyerPhone ? `+94 *** ${buyerPhone.slice(-4)} verified` : '+94 *** 4567 verified',
-    codAmount: `Rs. ${totalAmount.toLocaleString()}.00`,
+    codAmount: `LKR ${totalAmount.toLocaleString()}`,
   };
 
   const handleAutofillOtp = () => {

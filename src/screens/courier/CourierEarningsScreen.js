@@ -19,17 +19,17 @@ export const CourierEarningsScreen = () => {
 
         <Card style={styles.heroCard}>
           <Text style={styles.heroSub}>TODAY'S NET EARNINGS</Text>
-          <Text style={styles.heroAmount}>$142.50</Text>
+          <Text style={styles.heroAmount}>LKR 14,250</Text>
           <Text style={styles.heroTrips}>6 Deliveries Completed • 0 Delays</Text>
         </Card>
 
         <View style={styles.statsRow}>
           <Card style={styles.statBox}>
-            <Text style={styles.statVal}>$840.00</Text>
+            <Text style={styles.statVal}>LKR 84,000</Text>
             <Text style={styles.statLabel}>This Week</Text>
           </Card>
           <Card style={styles.statBox}>
-            <Text style={styles.statVal}>$45.00</Text>
+            <Text style={styles.statVal}>LKR 4,500</Text>
             <Text style={styles.statLabel}>Buyer Tips</Text>
           </Card>
         </View>
@@ -41,7 +41,7 @@ export const CourierEarningsScreen = () => {
               <Text style={styles.tripId}>Trip #8491 (Fragile Ceramic)</Text>
               <Text style={styles.tripTime}>Delivered 1:40 PM • 4.2 miles</Text>
             </View>
-            <Text style={styles.tripPay}>+$28.00</Text>
+            <Text style={styles.tripPay}>+LKR 2,800</Text>
           </View>
         </Card>
         <Card style={styles.tripCard}>
@@ -50,7 +50,7 @@ export const CourierEarningsScreen = () => {
               <Text style={styles.tripId}>Trip #8487 (Textiles Pickup)</Text>
               <Text style={styles.tripTime}>Delivered 11:20 AM • 8.1 miles</Text>
             </View>
-            <Text style={styles.tripPay}>+$34.50</Text>
+            <Text style={styles.tripPay}>+LKR 3,450</Text>
           </View>
         </Card>
       </ScrollView>

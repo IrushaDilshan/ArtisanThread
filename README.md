@@ -39,7 +39,7 @@
 Traditional craftspeople face critical hurdles: lack of digital presence, inventory tracking challenges, fragile parcel damage, and payment insecurity. Meanwhile, buyers seek verified authenticity and protected transactions.
 
 ArtisanThread solves this with a unified, role-adaptive mobile architecture:
-- 🏺 **Artisans** run a digital atelier, listing crafts, managing stock, and scheduling white-glove courier pickups.
+- 🏺 **Artisans** run a digital workshop, listing crafts, managing stock, and scheduling white-glove courier pickups.
 - 🎨 **Buyers** discover certified heritage creations, track shipments in real time, and transact through secure escrow protection.
 - 🚚 **Couriers** receive optimized routes, scan parcels using device hardware cameras, correct delivery addresses dynamically, and capture digital signatures upon delivery.
 
@@ -54,7 +54,7 @@ This project was engineered as a collaborative team endeavor, partitioned into d
 | **Module A:** Universal Onboarding & Auth | **Irusha Dilshan** | `IT23768758`<br>*(Project Lead)* | `feature/group-a-onboarding` | Dynamic vector onboarding (A1/A2/A3), Multi-role selector, OTP validation, Supabase Auth session engine |
 | **Module B:** Buyer Marketplace & Catalog | **Group Member B** | *(Contributor)* | `feature/group-b-buyer` | Curated handicraft catalog, Category filters, Real-time search, Buyer profile, Order tracking |
 | **Module C:** Checkout, Escrow & Orders | **Group Member C** | *(Contributor)* | `feature/group-c-checkout-escrow` | Secure cart & checkout, Escrow status state machine, Transaction logs, Order itemization |
-| **Module D:** Artisan Atelier & Inventory | **Group Member D** | *(Contributor)* | `feature/group-d-artisan` | Workshop metrics, Inventory creator/editor, Low-stock alerts, Dispatch preparation |
+| **Module D:** Artisan Workshop & Inventory | **Group Member D** | *(Contributor)* | `feature/group-d-artisan` | Workshop metrics, Inventory creator/editor, Low-stock alerts, Dispatch preparation |
 | **Logistics Suite:** Eco Express Courier | **Collaborative Core** | *(Team Cross-Functional)* | `development` / `main` | Camera parcel scanner (`expo-camera`), Live delivery transit, Signature pad (`PanResponder`), Geolocation fix |
 
 ---
@@ -142,10 +142,10 @@ sequenceDiagram
 - **Escrow-Backed Commerce:** Funds are securely locked during production and transit, protecting both buyer funds and craftsman labor.
 - **Transparent Status Progression:** `PENDING` ➔ `CONFIRMED` ➔ `CRAFTING` ➔ `READY_FOR_PICKUP` ➔ `IN_TRANSIT` ➔ `DELIVERED`.
 
-### 4. 🏺 Module D — Master Artisan Workshop (Atelier)
+### 4. 🏺 Module D — Master Artisan Workshop
 - **Studio Dashboard:** Overview of daily revenue, pending orders, and scheduled courier pickups.
 - **Craft Inventory Manager:** Rapid craft listing modal with price setting, stock level controls, and automatic *Low Stock* / *Sold Out* tags.
-- **Atelier Profile:** Master craftsman bio, heritage story, and workshop location badge.
+- **Artisan Profile:** Master craftsman bio, heritage story, and workshop location badge.
 
 ### 5. 🚚 Logistics Suite — Eco Express Courier Companion
 - **Hardware Barcode & Parcel Scanner:** Embedded camera scanning via `expo-camera` with animated laser HUD, torch toggle, and manual override.

@@ -103,27 +103,16 @@ export const BuyerHomeScreen = ({ navigation, route }) => {
   
   //change
   const displayedProducts = dbProducts.map((p) => ({
-        id: p.id,
-        title: p.title,
-        artisan: p.profiles?.full_name || 'Master Artisan',
-        region: p.profiles?.location || 'Craft Atelier',
-        price: `$${Number(p.price || 0).toFixed(2)}`,
-        unitPrice: Number(p.price),
-        image_url: p.image_url || p.imageUrl || p.image || null,
-        tag: p.category || 'Craft',
-        icon:
-          p.category === 'Textiles'
-            ? '🧣'
-            : p.category === 'Ceramics'
-            ? '🫖'
-            : p.category === 'Woodcraft'
-            ? '🪵'
-            : p.category === 'Jewelry'
-            ? '💍'
-            : '✨',
-      }));
-
-
+    id: p.id,
+    title: p.title,
+    artisan: p.profiles?.full_name || 'Master Artisan',
+    region: p.profiles?.location || 'Craft Workshop',
+    price: `LKR ${Number(p.price || 0).toLocaleString()}`,
+    unitPrice: Number(p.price),
+    image_url: p.image_url || p.imageUrl || p.image || null,
+    tag: p.category || 'Craft',
+    icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
+  }));
 
   return (
     <View style={styles.container}>

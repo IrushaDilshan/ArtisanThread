@@ -49,10 +49,11 @@ const getCheckoutTotal = (checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount, currencySymbol = 'Rs. ') =>
+const formatMoney = (amount) =>
   amount === null
     ? 'Not provided'
-    : `${currencySymbol}${amount.toLocaleString('en-US', {
+    : `LKR ${amount.toLocaleString('en-LK', {
+        minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })}`;
 
@@ -131,7 +132,7 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
 
           <Text style={styles.successTitle}>Payment Received!</Text>
           <Text style={styles.totalAmount}>
-            {formatMoney(orderTotal, checkout?.currencySymbol || 'Rs. ')}
+            {formatMoney(orderTotal)}
           </Text>
 
           <View style={styles.statusPill}>

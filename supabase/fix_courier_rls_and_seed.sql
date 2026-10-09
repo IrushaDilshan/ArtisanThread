@@ -122,7 +122,7 @@ BEGIN
         '20000000-0000-0000-0000-000000000001',
         target_courier_id,
         'IN_TRANSIT',
-        '{"name": "Atelier Warehouse", "city": "Kalutara"}'::jsonb,
+        '{"name": "Artisan Warehouse", "city": "Kalutara"}'::jsonb,
         '{"name": "Manji Samaranayaka", "city": "Colombo 07", "details": "1 parcel · COD Rs. 2,500.00"}'::jsonb,
         'Collect Rs. 2,500.00 cash upon delivery',
         NOW() + INTERVAL '2 hours'

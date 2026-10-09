@@ -28,7 +28,7 @@ const DEFAULT_USERS = {
   [ROLES.ARTISAN]: {
     id: 'usr_artisan_01',
     name: 'Kenji Takahashi',
-    atelierName: 'Takahashi Handloom & Indigo',
+    artisanName: 'Takahashi Handloom & Indigo',
     email: 'kenji.artisan@artisanthread.com',
     role: ROLES.ARTISAN,
     avatar: 'KT',

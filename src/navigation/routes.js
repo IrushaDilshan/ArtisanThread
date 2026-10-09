@@ -40,6 +40,7 @@ export const ROUTES = {
     DASHBOARD: 'ArtisanDashboard',
     PRODUCTS: 'ArtisanProducts',
     ORDERS: 'ArtisanOrders',
+    MESSAGES: 'ArtisanMessages',
     PROFILE: 'ArtisanProfile',
   },
 

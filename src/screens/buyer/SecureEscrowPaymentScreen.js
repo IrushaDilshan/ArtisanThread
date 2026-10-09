@@ -56,12 +56,13 @@ const getCheckoutTotal = (checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount, currencySymbol = 'Rs. ') => {
+const formatMoney = (amount) => {
   if (amount === null) {
     return 'Not provided';
   }
 
-  return `${currencySymbol}${amount.toLocaleString('en-US', {
+  return `LKR ${amount.toLocaleString('en-LK', {
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 };
@@ -328,7 +329,7 @@ export const SecureEscrowPaymentScreen = ({ navigation, route }) => {
                 </Text>
               </View>
               <Text style={styles.totalAmount}>
-                {formatMoney(orderTotal, checkout?.currencySymbol || 'Rs. ')}
+                {formatMoney(orderTotal)}
               </Text>
             </Card>
 

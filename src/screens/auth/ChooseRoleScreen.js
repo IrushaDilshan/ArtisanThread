@@ -32,7 +32,7 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
     {
       key: ROLES.ARTISAN,
       title: 'Artisan (Master Craftsperson)',
-      desc: 'Showcase atelier crafts & manage workshop orders',
+      desc: 'Showcase artisan crafts & manage workshop orders',
     },
     {
       key: ROLES.BUYER,
@@ -53,27 +53,28 @@ export const ChooseRoleScreen = ({ navigation, route }) => {
 
 
 
-//change
   const handleRegister = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    console.log('Selected role:', selectedRole);
+      console.log('Selected role:', selectedRole);
 
-    await login(selectedRole);
+      await login(selectedRole);
 
-    console.log('Role login completed:', selectedRole);
-  } catch (err) {
-    console.warn('Role login error:', err);
+      console.log('Role login completed:', selectedRole);
+    } catch (err) {
+      console.warn('Role login error:', err);
 
-    Alert.alert(
-      'Error',
-      err?.message || 'Could not continue with selected role.'
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+      Alert.alert(
+        'Error',
+        err?.message || 'Could not continue with selected role.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
 
 
 
