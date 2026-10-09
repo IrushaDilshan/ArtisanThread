@@ -95,10 +95,11 @@ const getTotal = (order, checkout) => {
   }, 0);
 };
 
-const formatMoney = (amount, currencySymbol = 'Rs. ') =>
+const formatMoney = (amount) =>
   amount === null
-    ? `${currencySymbol}—`
-    : `${currencySymbol}${amount.toLocaleString('en-US', {
+    ? 'LKR —'
+    : `LKR ${amount.toLocaleString('en-LK', {
+        minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })}`;
 
@@ -473,7 +474,7 @@ export const OrderStatusScreen = ({ navigation, route }) => {
               {title}
             </Text>
             <Text style={styles.productPrice}>
-              {formatMoney(total, checkout.currencySymbol || 'Rs. ')}
+              {formatMoney(total)}
             </Text>
             <Text style={styles.orderNumber}>Order {orderNumber}</Text>
           </View>

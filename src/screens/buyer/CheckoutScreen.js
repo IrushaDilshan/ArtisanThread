@@ -182,8 +182,12 @@ export const CheckoutScreen = ({ navigation, route }) => {
       ? providedTotal - itemTotal
       : 0);
   const totalAmount = itemTotal + deliveryFee;
-  const currencySymbol = params.currencySymbol || '$';
-  const money = (amount) => `${currencySymbol}${amount.toFixed(2)}`;
+  const currencySymbol = 'LKR ';
+  const money = (amount) =>
+    `LKR ${amount.toLocaleString('en-LK', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   const missingFields = [];
 
   if (items.length === 0 || items.some((item) => !item.valid)) {

@@ -68,8 +68,11 @@ const getAmount = (order, checkout, payment, refund) => {
 
 const formatMoney = (amount) =>
   amount === null
-    ? 'Rs. —'
-    : `Rs. ${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+    ? 'LKR —'
+    : `LKR ${amount.toLocaleString('en-LK', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
 
 const formatRefundStatus = (status) => {
   switch (String(status || '').toUpperCase()) {
