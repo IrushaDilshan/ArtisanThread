@@ -17,15 +17,15 @@ import { ROUTES } from '../../navigation/routes';
 const INITIAL_WISHLIST = [
 	{
 		id: 'indigo-dress',
-		name: 'Indigo Batik Dress',
+		name: 'Indigo Silk Batik Saree & Dress',
 		price: '6,500',
 		artisan: 'Nimali Batik Studio',
 		rating: '4.9 (22)',
-		image: 'https://images.unsplash.com/photo-1583391733956-6c78276477e3?auto=format&fit=crop&w=700&q=85',
+		image: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=700&q=85',
 	},
 	{
 		id: 'dumbara-bag',
-		name: 'Dumbara Handloom Bag',
+		name: 'Dumbara Handloom Tote Bag',
 		price: '4,800',
 		artisan: 'Kandyan Loom House',
 		rating: '4.8 (16)',
@@ -33,18 +33,18 @@ const INITIAL_WISHLIST = [
 	},
 	{
 		id: 'lacquer-elephant',
-		name: 'Lacquer Elephant',
+		name: 'Handcarved Lacquer Wooden Elephant',
 		price: '3,200',
 		artisan: 'Laksha Artisans',
-		rating: '4.9 (44)',
-		image: 'https://images.unsplash.com/photo-1605648916361-9bc12ad6a569?auto=format&fit=crop&w=700&q=85',
+		rating: '4.8 (12)',
+		image: 'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?auto=format&fit=crop&w=700&q=85',
 	},
 	{
 		id: 'palm-leaf-box',
-		name: 'Palm Leaf Storage Box',
+		name: 'Matara Palm Leaf Storage Box',
 		price: '2,950',
 		artisan: 'Matara Craft Circle',
-		rating: '4.7 (31)',
+		rating: '4.9 (31)',
 		image: 'https://images.unsplash.com/photo-1606760227091-3dd870d97f1d?auto=format&fit=crop&w=700&q=85',
 	},
 ];

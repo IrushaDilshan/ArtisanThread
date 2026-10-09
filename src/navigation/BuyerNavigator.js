@@ -2,6 +2,7 @@ import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ROUTES } from './routes';
@@ -27,6 +28,11 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 const BuyerTabs = () => {
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom || 0;
+  const tabBottomPad = Math.max(bottomInset, Platform.OS === 'ios' ? 24 : 10);
+  const tabHeight = 54 + tabBottomPad;
+
   return (
     <Tab.Navigator
       initialRouteName={ROUTES.BUYER.HOME}
@@ -35,8 +41,29 @@ const BuyerTabs = () => {
         headerShown: false,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textMuted,
-        tabBarStyle: styles.tabBar,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarStyle: {
+          backgroundColor: COLORS.surface,
+          borderTopColor: COLORS.borderLight,
+          borderTopWidth: 1,
+          height: tabHeight,
+          paddingBottom: tabBottomPad,
+          paddingTop: 6,
+          elevation: 10,
+          shadowColor: '#00251A',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 6,
+        },
+        tabBarItemStyle: {
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingVertical: 2,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '600',
+          marginTop: 2,
+        },
       }}
     >
       <Tab.Screen
@@ -44,7 +71,9 @@ const BuyerTabs = () => {
         component={MarketplaceScreen}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} color={color} size={size} />
+          ),
         }}
       />
       <Tab.Screen
@@ -52,31 +81,9 @@ const BuyerTabs = () => {
         component={CartScreen}
         options={{
           tabBarLabel: 'Cart',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" color={color} size={size} />,
-        }}
-      />
-      <Tab.Screen
-        name={ROUTES.BUYER.PRODUCT_DETAIL}
-        component={ProductDetailScreen}
-        options={{
-          tabBarButton: () => null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tab.Screen
-        name={ROUTES.BUYER.WISHLIST}
-        component={WishlistScreen}
-        options={{
-          tabBarButton: () => null,
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      <Tab.Screen
-        name={ROUTES.BUYER.CHAT}
-        component={ChatScreen}
-        options={{
-          tabBarButton: () => null,
-          tabBarStyle: { display: 'none' },
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'bag-handle' : 'bag-handle-outline'} color={color} size={size} />
+          ),
         }}
       />
       <Tab.Screen
@@ -84,7 +91,9 @@ const BuyerTabs = () => {
         component={OrdersScreen}
         options={{
           tabBarLabel: 'Orders',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cube-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'cube' : 'cube-outline'} color={color} size={size} />
+          ),
         }}
       />
       <Tab.Screen
@@ -92,7 +101,9 @@ const BuyerTabs = () => {
         component={BuyerProfileScreen}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'person' : 'person-outline'} color={color} size={size} />
+          ),
         }}
       />
     </Tab.Navigator>
@@ -107,10 +118,36 @@ export const BuyerNavigator = () => {
         headerShown: false,
       }}
     >
-      {/* Main Buyer Tabs */}
+      {/* Main Buyer Tabs (Home, Cart, Orders, Profile) */}
       <Stack.Screen
         name="BuyerTabs"
         component={BuyerTabs}
+      />
+
+      {/* Cart & Orders directly registered in Stack to support direct navigation */}
+      <Stack.Screen
+        name={ROUTES.BUYER.CART}
+        component={CartScreen}
+      />
+      <Stack.Screen
+        name={ROUTES.BUYER.ORDERS}
+        component={OrdersScreen}
+      />
+
+      {/* Product Detail, Wishlist, Chat */}
+      <Stack.Screen
+        name={ROUTES.BUYER.PRODUCT_DETAIL}
+        component={ProductDetailScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.WISHLIST}
+        component={WishlistScreen}
+      />
+
+      <Stack.Screen
+        name={ROUTES.BUYER.CHAT}
+        component={ChatScreen}
       />
 
       {/* Member 3 - Checkout */}
@@ -147,17 +184,5 @@ export const BuyerNavigator = () => {
     </Stack.Navigator>
   );
 };
-
-const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: COLORS.surface,
-    borderTopColor: COLORS.borderLight,
-    borderTopWidth: 1,
-    height: Platform.OS === 'ios' ? 88 : 64,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-    paddingTop: 8,
-  },
-  tabLabel: { fontSize: 10, fontWeight: '600' },
-});
 
 export default BuyerNavigator;
