@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/Button';
 import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { Card } from '../../components/Card';
@@ -323,17 +324,22 @@ export const CheckoutScreen = ({ navigation, route }) => {
           onPress={() => navigation.goBack()}
           style={styles.headerButton}
         >
-          <Text style={styles.headerBack}>‹</Text>
+          <Ionicons name="arrow-back" size={20} color={COLORS.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Checkout</Text>
-        <View style={styles.cartBadge}>
-          <Text style={styles.cartIcon}>🛒</Text>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Cart"
+          onPress={() => navigation.navigate(ROUTES.BUYER.CART)}
+          style={styles.cartBadge}
+        >
+          <Ionicons name="bag-handle-outline" size={20} color={COLORS.textPrimary} />
           {items.length > 0 && (
             <View style={styles.cartCount}>
               <Text style={styles.cartCountText}>{items.length}</Text>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
