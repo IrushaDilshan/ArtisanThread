@@ -954,6 +954,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: SPACING.xs,
   },
+  deliveryPinCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1.5,
+  },
+  deliveryPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deliveryPinIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  deliveryPinIcon: {
+    fontSize: 20,
+  },
+  deliveryPinTextSide: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  deliveryPinTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  deliveryPinSubtitle: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+  },
+  deliveryPinBadge: {
+    backgroundColor: '#004D40',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  deliveryPinDigits: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
   contactButton: {
     marginTop: SPACING.md,
   },

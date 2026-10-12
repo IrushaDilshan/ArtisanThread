@@ -1,4 +1,7 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase.js';
+import { safeStorage } from './storageHelper.js';
+
+const STORAGE_KEY = '@artisanthread_courier_deliveries_v2';
 
 export const DEFAULT_DEMO_DELIVERIES = [
   {
@@ -118,12 +121,46 @@ export const DEFAULT_DEMO_DELIVERIES = [
 ];
 
 let localDeliveriesState = [...DEFAULT_DEMO_DELIVERIES];
+let isLoaded = false;
+let _orderStatusListener = null;
+
+export const setOrderStatusListener = (listener) => {
+  _orderStatusListener = listener;
+};
+
+const loadDeliveries = async () => {
+  if (isLoaded) return localDeliveriesState;
+  try {
+    const raw = await safeStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        localDeliveriesState = parsed;
+      }
+    }
+  } catch (e) {
+    // Keep in-memory
+  }
+  isLoaded = true;
+  return localDeliveriesState;
+};
+
+const saveDeliveries = async (deliveries) => {
+  localDeliveriesState = deliveries;
+  try {
+    await safeStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  } catch (e) {
+    // Keep in-memory
+  }
+};
 
 export const courierService = {
   /**
    * Fetch active deliveries assigned to a courier with automatic fallback to active demo deliveries
    */
   async getAssignedDeliveries(courierId = null) {
+    await loadDeliveries();
+
     if (isSupabaseConfigured) {
       try {
         const baseSelect = `
@@ -134,50 +171,145 @@ export const courierService = {
           )
         `;
 
-        // 1. If courierId provided, first search for deliveries specifically assigned to this courier in Supabase
         if (courierId) {
           const { data: userDeliveries, error: userError } = await supabase
             .from('deliveries')
             .select(baseSelect)
             .eq('courier_id', courierId)
             .neq('status', 'DELIVERED')
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: false });
 
           if (!userError && userDeliveries && userDeliveries.length > 0) {
-            return userDeliveries;
+            // Merge newly created local deliveries that aren't in Supabase yet
+            const merged = [...userDeliveries];
+            for (const local of localDeliveriesState) {
+              if (!merged.some(d => d.id === local.id || (d.tracking_code && d.tracking_code === local.tracking_code))) {
+                merged.unshift(local);
+              }
+            }
+            return merged;
           }
         }
 
-        // 2. Fallback: If no deliveries assigned to this courier yet,
-        // fetch any active database deliveries (e.g. from seed.sql or unassigned)
         const { data: allActive, error: allError } = await supabase
           .from('deliveries')
           .select(baseSelect)
           .neq('status', 'DELIVERED')
-          .order('created_at', { ascending: true })
-          .limit(10);
+          .order('created_at', { ascending: false })
+          .limit(15);
 
         if (!allError && allActive && allActive.length > 0) {
-          return allActive;
+          const merged = [...allActive];
+          for (const local of localDeliveriesState) {
+            if (!merged.some(d => d.id === local.id || (d.tracking_code && d.tracking_code === local.tracking_code))) {
+              merged.unshift(local);
+            }
+          }
+          return merged;
         }
       } catch (err) {
         console.warn('Supabase deliveries fetch notice:', err.message);
       }
     }
 
-    // 3. Fallback when Supabase deliveries table is empty (e.g. teammate hasn't added orders yet)
-    // Ensures courier development and testing can proceed seamlessly right away!
     return localDeliveriesState;
+  },
+
+  /**
+   * Create a new delivery job for courier when artisan assigns an order
+   */
+  async createDeliveryFromOrder(order, courierInfo = {}) {
+    await loadDeliveries();
+
+    const trackingCode =
+      order.tracking_code ||
+      `ATH-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-2)}`;
+
+    const totalAmount = order.rawPrice || order.total_amount || 0;
+    const isCod =
+      order.payment_status === 'cash_on_delivery' ||
+      order.payment_method === 'Cash on Delivery';
+
+    const newDelivery = {
+      id: `del-${order.id || Date.now()}`,
+      order_id: order.db_id || order.id,
+      courier_id: courierInfo.id || 'usr_courier_01',
+      courier_name: courierInfo.name || 'Marcus Vance',
+      tracking_code: trackingCode,
+      status: 'ASSIGNED',
+      pickup_address: {
+        name: order.artisanName || 'Takahashi Handloom & Indigo Studio',
+        address_line1: '142 Temple Road',
+        city: 'Kandy',
+        phone: '+94 81 223 4567',
+        details: `${order.item || '1 craft parcel'} · Packaging Ready`,
+      },
+      dropoff_address: {
+        name: order.buyer || 'Customer Delivery',
+        address_line1: order.destination || '42 Ward Place, Colombo 07',
+        city: order.destination?.split(',')?.pop()?.trim() || 'Colombo 07',
+        phone: order.phone || '+94 77 123 4567',
+        details: `Order #${order.id} · ${order.item || ''}`,
+      },
+      pickup_lat: 7.2906,
+      pickup_lng: 80.6337,
+      dropoff_lat: 6.9271,
+      dropoff_lng: 79.8612,
+      recipient_notes:
+        order.notes ||
+        (isCod
+          ? `COD: LKR ${Number(totalAmount).toLocaleString('en-LK')}`
+          : 'Escrow Held. Fragile handcrafted piece - Handle with care'),
+      order: {
+        id: order.id,
+        order_number: order.order_number || order.id,
+        total_amount: totalAmount,
+        status: 'PROCESSING',
+        payment_status: isCod ? 'cash_on_delivery' : 'held',
+        buyer: {
+          full_name: order.buyer,
+          phone: order.phone,
+        },
+      },
+      created_at: new Date().toISOString(),
+    };
+
+    // Prepend to active deliveries list
+    const updated = [newDelivery, ...localDeliveriesState.filter(d => d.id !== newDelivery.id && d.tracking_code !== trackingCode)];
+    await saveDeliveries(updated);
+
+    // If Supabase is connected, attempt insert
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('deliveries').insert([
+          {
+            tracking_code: trackingCode,
+            order_id: order.db_id || null,
+            courier_id: courierInfo.id && courierInfo.id.length === 36 ? courierInfo.id : null,
+            status: 'ASSIGNED',
+            pickup_address: newDelivery.pickup_address,
+            dropoff_address: newDelivery.dropoff_address,
+            recipient_notes: newDelivery.recipient_notes,
+          },
+        ]);
+      } catch (e) {
+        console.warn('Supabase delivery insert notice:', e.message);
+      }
+    }
+
+    return newDelivery;
   },
 
   /**
    * One-click claim/assign all seed or unassigned deliveries in database to the logged-in courier
    */
   async assignDemoDeliveriesToCourier(courierId) {
+    await loadDeliveries();
     localDeliveriesState = localDeliveriesState.map((d) => ({
       ...d,
       courier_id: courierId || 'courier-demo',
     }));
+    await saveDeliveries(localDeliveriesState);
 
     if (isSupabaseConfigured && courierId) {
       try {
@@ -202,6 +334,8 @@ export const courierService = {
    * Verify parcel tracking code on scan
    */
   async verifyTrackingCode(trackingCode) {
+    await loadDeliveries();
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -263,6 +397,8 @@ export const courierService = {
    * Mark delivery as picked up or completed
    */
   async updateDeliveryStatus(deliveryId, status, extraFields = {}) {
+    await loadDeliveries();
+
     const updatePayload = {
       status,
       updated_at: new Date().toISOString(),
@@ -275,10 +411,29 @@ export const courierService = {
       updatePayload.delivered_at = new Date().toISOString();
     }
 
-    // Update in-memory local state
-    localDeliveriesState = localDeliveriesState.map((d) =>
-      d.id === deliveryId ? { ...d, ...updatePayload } : d
+    const targetDelivery = localDeliveriesState.find(
+      (d) => d.id === deliveryId || d.tracking_code === deliveryId
     );
+
+    const updated = localDeliveriesState.map((d) =>
+      d.id === deliveryId || d.tracking_code === deliveryId ? { ...d, ...updatePayload } : d
+    );
+    await saveDeliveries(updated);
+
+    if (_orderStatusListener) {
+      const orderId =
+        targetDelivery?.order_id ||
+        targetDelivery?.order?.id ||
+        targetDelivery?.tracking_code ||
+        deliveryId;
+      if (orderId) {
+        if (status === 'PICKED_UP' || status === 'IN_TRANSIT') {
+          _orderStatusListener(orderId, 'IN_TRANSIT');
+        } else if (status === 'DELIVERED') {
+          _orderStatusListener(orderId, 'DELIVERED');
+        }
+      }
+    }
 
     if (isSupabaseConfigured) {
       try {
@@ -298,4 +453,3 @@ export const courierService = {
     return { id: deliveryId, ...updatePayload };
   },
 };
-
