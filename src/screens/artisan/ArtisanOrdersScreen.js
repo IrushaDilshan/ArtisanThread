@@ -17,6 +17,7 @@ import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { orderService } from '../../services/orderService';
+import { authService } from '../../services/authService';
 
 export const ArtisanOrdersScreen = ({ navigation }) => {
   const [orders, setOrders] = useState([]);
@@ -25,6 +26,24 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [couriersList, setCouriersList] = useState([]);
+  const [selectedCourierId, setSelectedCourierId] = useState(null);
+  const [loadingCouriers, setLoadingCouriers] = useState(false);
+
+  const loadCouriers = useCallback(async () => {
+    try {
+      setLoadingCouriers(true);
+      const list = await authService.getRegisteredCouriers();
+      if (list && list.length > 0) {
+        setCouriersList(list);
+        setSelectedCourierId((prev) => prev || list[0].id);
+      }
+    } catch (e) {
+      console.warn('Error loading registered couriers:', e.message);
+    } finally {
+      setLoadingCouriers(false);
+    }
+  }, []);
 
   const loadOrders = useCallback(async () => {
     try {
@@ -46,12 +65,14 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       loadOrders();
-    }, [loadOrders])
+      loadCouriers();
+    }, [loadOrders, loadCouriers])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
     loadOrders();
+    loadCouriers();
   };
 
   const isPendingStatus = (s) =>
@@ -108,13 +129,24 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
 
     try {
       setAssigning(true);
+      const chosenCourier =
+        couriersList.find((c) => c.id === selectedCourierId) ||
+        couriersList[0] || {
+          id: '5de2dd7b-8e12-4901-8979-7f5520dc2a31',
+          full_name: 'irusha',
+          phone: '0777777777',
+          vehicle: 'Electric Cargo Van #402',
+        };
+
       const courierPartner = {
-        id: 'usr_courier_01',
-        name: 'Marcus Vance',
-        vehicle: 'Electric Cargo Van #402',
+        id: chosenCourier.id,
+        name: chosenCourier.full_name,
+        full_name: chosenCourier.full_name,
+        phone: chosenCourier.phone,
+        vehicle: chosenCourier.vehicle,
       };
 
-      const { updatedOrder, delivery } = await orderService.assignCourierToOrder(
+      const { updatedOrder } = await orderService.assignCourierToOrder(
         orderToAssign.id,
         courierPartner
       );
@@ -127,7 +159,7 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
 
       Alert.alert(
         'Courier Assigned! 🚚',
-        `Order #${updatedOrder.id} has been dispatched to courier partner ${courierPartner.name}.\n\nTracking ID: ${updatedOrder.tracking_code}\n\nThis delivery is now live in the Courier Daily Jobs dashboard!`
+        `Order #${updatedOrder.id} has been dispatched specifically to courier partner ${courierPartner.name} (${courierPartner.phone || ''}).\n\nTracking ID: ${updatedOrder.tracking_code}\n\nThis delivery is now live exclusively in ${courierPartner.name}'s Courier Daily Jobs dashboard!`
       );
     } catch (err) {
       Alert.alert('Assignment Error', err.message || 'Unable to assign courier.');
@@ -346,16 +378,75 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
                         Assign this order to partner courier for workshop pickup and direct delivery to customer.
                       </Text>
 
-                      <View style={styles.courierPartnerBox}>
-                        <View style={styles.courierAvatar}>
-                          <Text style={styles.courierAvatarText}>MV</Text>
+                      {/* Registered Couriers Selection List */}
+                      <Text style={styles.selectCourierHeading}>
+                        Select Registered Courier Partner:
+                      </Text>
+                      {loadingCouriers ? (
+                        <ActivityIndicator size="small" color="#00796B" style={{ marginVertical: 12 }} />
+                      ) : (
+                        <View style={styles.couriersList}>
+                          {couriersList.map((c) => {
+                            const isSelected = selectedCourierId === c.id;
+                            const initials = (c.full_name || 'CR')
+                              .split(' ')
+                              .map((n) => n[0])
+                              .join('')
+                              .toUpperCase()
+                              .slice(0, 2);
+
+                            return (
+                              <TouchableOpacity
+                                key={c.id}
+                                activeOpacity={0.8}
+                                onPress={() => setSelectedCourierId(c.id)}
+                                style={[
+                                  styles.courierOptionCard,
+                                  isSelected && styles.courierOptionCardSelected,
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.courierAvatar,
+                                    isSelected && styles.courierAvatarSelected,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.courierAvatarText,
+                                      isSelected && styles.courierAvatarTextSelected,
+                                    ]}
+                                  >
+                                    {initials}
+                                  </Text>
+                                </View>
+                                <View style={{ flex: 1, paddingRight: 4 }}>
+                                  <View style={styles.courierNameRow}>
+                                    <Text style={styles.courierName}>{c.full_name}</Text>
+                                    {c.phone ? (
+                                      <Text style={styles.courierPhonePill}>📞 {c.phone}</Text>
+                                    ) : null}
+                                  </View>
+                                  <Text style={styles.courierDetails}>
+                                    ⚡ {c.vehicle || 'Delivery Van'} · {c.rating || '4.8★'}
+                                  </Text>
+                                  <Text style={styles.courierRoute}>
+                                    📍 {c.location || 'Local Belt'}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.radioCircle,
+                                    isSelected && styles.radioCircleSelected,
+                                  ]}
+                                >
+                                  {isSelected && <View style={styles.radioDot} />}
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
                         </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.courierName}>Marcus Vance</Text>
-                          <Text style={styles.courierDetails}>⚡ Electric Cargo Van #402 · 4.98★</Text>
-                          <Text style={styles.courierRoute}>📍 Ready in Kandy & Central Zone</Text>
-                        </View>
-                      </View>
+                      )}
 
                       <TouchableOpacity
                         style={styles.assignCourierBtn}
@@ -367,7 +458,10 @@ export const ArtisanOrdersScreen = ({ navigation }) => {
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
                           <Text style={styles.assignCourierBtnText}>
-                            Assign to Marcus Vance & Dispatch 📦
+                            {`Assign to ${
+                              (couriersList.find((c) => c.id === selectedCourierId) || couriersList[0])?.full_name ||
+                              'Courier'
+                            } & Dispatch 📦`}
                           </Text>
                         )}
                       </TouchableOpacity>
@@ -831,34 +925,75 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     lineHeight: 16,
   },
-  courierPartnerBox: {
+  selectCourierHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  couriersList: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  courierOptionCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: '#FFFFFF',
     padding: 10,
     borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+  },
+  courierOptionCardSelected: {
+    borderColor: '#00796B',
+    backgroundColor: '#F0FDF4',
+    shadowColor: '#00796B',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
   },
   courierAvatar: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#00796B',
+    backgroundColor: '#6B7280',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  courierAvatarSelected: {
+    backgroundColor: '#00796B',
   },
   courierAvatarText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 13,
   },
+  courierAvatarTextSelected: {
+    color: '#FFFFFF',
+  },
+  courierNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 1,
+  },
   courierName: {
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.textPrimary,
+  },
+  courierPhonePill: {
+    fontSize: 10,
+    color: '#00796B',
+    fontWeight: '700',
+    backgroundColor: '#E6F4F1',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
   },
   courierDetails: {
     fontSize: 11,
@@ -870,6 +1005,24 @@ const styles = StyleSheet.create({
     color: '#047857',
     marginTop: 2,
     fontWeight: '600',
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioCircleSelected: {
+    borderColor: '#00796B',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00796B',
   },
   assignCourierBtn: {
     backgroundColor: '#00796B',

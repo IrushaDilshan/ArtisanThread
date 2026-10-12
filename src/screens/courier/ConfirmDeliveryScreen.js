@@ -397,6 +397,8 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
       // 1. Update delivery status to DELIVERED in database / local state
       await courierService.updateDeliveryStatus(trackingId, 'DELIVERED', {
         proof_photo_url: photoUri,
+        cod_collected: isCod ? isCodCollected : true,
+        total_amount: Number(totalAmount) || 0,
       });
 
       // 2. Also ensure order is updated and escrow is released to artisan

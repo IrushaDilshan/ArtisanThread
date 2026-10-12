@@ -7,12 +7,14 @@ import {
   TouchableOpacity,
   StatusBar,
   Alert,
-  Platform,
+  Modal,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { ROUTES } from '../../navigation/routes';
 import { useAuth } from '../../context/AuthContext';
+import { courierService } from '../../services';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -106,82 +108,92 @@ export const CourierProfileScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
+  const [isOnDuty, setIsOnDuty] = useState(true);
+  const [activeModal, setActiveModal] = useState(null); // 'vehicle' | 'earnings' | 'hours' | 'support' | null
+  const [deliveries, setDeliveries] = useState([]);
 
-  const courierName = user?.name || user?.full_name || 'Kavinda Fernando';
-  const initials = courierName
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || 'KF';
+  const loadProfileDeliveries = useCallback(async () => {
+    try {
+      const data = await courierService.getAssignedDeliveries(user?.id, user);
+      if (data && Array.isArray(data)) {
+        setDeliveries(data);
+      }
+    } catch (_) {}
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setActiveTab('profile');
+      loadProfileDeliveries();
+    }, [loadProfileDeliveries])
+  );
+
+  const courierName = user?.name || user?.full_name || 'irusha';
+  const initials =
+    courierName
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'IR';
+
+  const completedDeliveries = deliveries.filter((d) => d.status === 'DELIVERED').length;
+  const activeDeliveries = deliveries.filter((d) => d.status !== 'DELIVERED').length;
+  const totalDeliveriesDisplay = user?.metadata?.deliveriesCount
+    ? String(Number(user.metadata.deliveriesCount) + completedDeliveries)
+    : String(128 + completedDeliveries);
+
+  const totalCod = deliveries.reduce((sum, d) => {
+    const isCod =
+      d.order?.payment_status === 'cash_on_delivery' ||
+      Boolean(d.recipient_notes?.includes('COD'));
+    const isDelivered = d.status === 'DELIVERED';
+    const amount = Number(d.total_amount || d.order?.total_amount || 0);
+    return sum + (isCod || isDelivered ? amount : 0);
+  }, 0);
+
+  const estimatedPayout = completedDeliveries * 450 + 2500;
 
   const courierData = {
     name: courierName,
     initials,
     title: user?.badge || 'Express Delivery Partner',
     subRoute: user?.location || user?.metadata?.vehicle || 'Kalutara & suburbs route',
-    status: '• On duty',
-    deliveries: user?.metadata?.deliveriesCount ? String(user.metadata.deliveriesCount) : '128',
+    deliveries: totalDeliveriesDisplay,
     rating: user?.rating || '4.9 ★',
     onTime: '98%',
+    vehicleModel: user?.vehicle || user?.metadata?.vehicle || 'Electric Cargo Van #402',
+    plateNumber: user?.metadata?.plate || 'WP CAD-8821',
+    licenseNo: user?.metadata?.license || 'B-9284102',
+    partnerId: 'CR-KAL-8821',
+    phone: user?.phone || '+94 77 234 5678',
+    totalCod,
+    completedDeliveries,
+    activeDeliveries,
+    estimatedPayout,
   };
 
   const handleMenuPress = (menuKey) => {
-    switch (menuKey) {
-      case 'vehicle':
-        Alert.alert(
-          'Vehicle Details',
-          'Vehicle: Electric Cargo Van #402\nPlate: WP CAD-8821\nStatus: Inspected & Verified for fragile artisan goods.',
-          [{ text: 'OK' }]
-        );
-        break;
-      case 'earnings':
-        if (navigation?.navigate) {
-          navigation.navigate(ROUTES.COURIER.EARNINGS);
-        }
-        break;
-      case 'hours':
-        Alert.alert(
-          'Working Hours',
-          'Shift: 08:30 AM – 06:00 PM\nRoute: Kalutara Coastal & Central\nTotal active today: 5h 22m',
-          [{ text: 'Close' }]
-        );
-        break;
-      case 'support':
-        Alert.alert(
-          'Help & Support',
-          'ArtisanThread Dispatch Hotline: 011 234 5678\nCourier Support Chat available 24/7.',
-          [{ text: 'Dismiss' }]
-        );
-        break;
-      case 'logout':
-        Alert.alert(
-          'Log Out',
-          'Are you sure you want to end your courier shift and log out?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Log Out',
-              style: 'destructive',
-              onPress: () => {
-                if (logout) logout();
-              },
+    if (menuKey === 'logout') {
+      Alert.alert(
+        'Log Out',
+        'Are you sure you want to end your courier shift and log out?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log Out',
+            style: 'destructive',
+            onPress: () => {
+              if (logout) logout();
             },
-          ]
-        );
-        break;
-      default:
-        break;
+          },
+        ]
+      );
+    } else {
+      setActiveModal(menuKey);
     }
   };
-
-  // Enforce Profile tab as active whenever this screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      setActiveTab('profile');
-    }, [])
-  );
 
   const handleTabPress = (tabKey) => {
     if (tabKey === 'jobs' && navigation?.navigate) {
@@ -202,7 +214,13 @@ export const CourierProfileScreen = ({ navigation }) => {
       {/* 1. Header Bar with Back Arrow and Centered Title */}
       <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
-          onPress={() => navigation?.goBack()}
+          onPress={() => {
+            if (navigation?.navigate) {
+              navigation.navigate(ROUTES.COURIER.HOME);
+            } else {
+              navigation?.goBack();
+            }
+          }}
           activeOpacity={0.7}
           style={styles.backButton}
         >
@@ -229,10 +247,24 @@ export const CourierProfileScreen = ({ navigation }) => {
             <Text style={styles.profileSubtitle}>{courierData.title}</Text>
             <Text style={styles.profileRoute}>{courierData.subRoute}</Text>
 
-            {/* On Duty Status Badge */}
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>{courierData.status}</Text>
-            </View>
+            {/* On Duty Status Badge (Tappable toggle) */}
+            <TouchableOpacity
+              onPress={() => setIsOnDuty((prev) => !prev)}
+              activeOpacity={0.8}
+              style={[
+                styles.statusBadge,
+                !isOnDuty && { backgroundColor: 'rgba(255, 255, 255, 0.08)' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  !isOnDuty && { color: '#9CA3AF' },
+                ]}
+              >
+                {isOnDuty ? '• On duty' : '○ Off duty'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -324,6 +356,178 @@ export const CourierProfileScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Detail Bottom Sheet / Modal (strictly on this screen, no external navigation) */}
+      <Modal
+        visible={Boolean(activeModal)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setActiveModal(null)}
+        >
+          <TouchableOpacity
+            style={[styles.modalSheet, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}
+            activeOpacity={1}
+          >
+            {activeModal === 'vehicle' && (
+              <View>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>🚚 Vehicle Details</Text>
+                  <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.closeBtn}>
+                    <Text style={styles.closeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Vehicle Model</Text>
+                    <Text style={styles.infoValue}>{courierData.vehicleModel}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>License Plate</Text>
+                    <Text style={[styles.infoValue, { fontWeight: '800' }]}>{courierData.plateNumber}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Courier Partner ID</Text>
+                    <Text style={styles.infoValue}>{courierData.partnerId}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Driving License</Text>
+                    <Text style={styles.infoValue}>{courierData.licenseNo}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Cargo Compartment</Text>
+                    <Text style={styles.infoValue}>Double-padded racks for fragile crafts</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Transit Fitness</Text>
+                    <Text style={[styles.infoValue, { color: '#059669', fontWeight: '700' }]}>
+                      Verified & Inspected ✓
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {activeModal === 'earnings' && (
+              <View>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>💵 Earnings & Payouts</Text>
+                  <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.closeBtn}>
+                    <Text style={styles.closeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>{"Today's COD Collections"}</Text>
+                    <Text style={[styles.infoValue, { color: '#D97706', fontWeight: '800' }]}>
+                      Rs. {courierData.totalCod.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Base Pay Rate</Text>
+                    <Text style={styles.infoValue}>LKR 450 per delivered parcel</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>{"Today's Dropoffs"}</Text>
+                    <Text style={styles.infoValue}>{courierData.completedDeliveries} completed dropoffs</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Estimated Shift Payout</Text>
+                    <Text style={[styles.infoValue, { color: '#059669', fontWeight: '800' }]}>
+                      LKR {courierData.estimatedPayout.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Payout Bank</Text>
+                    <Text style={styles.infoValue}>Commercial Bank · Acc ***4108</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Payout Schedule</Text>
+                    <Text style={styles.infoValue}>Weekly direct deposit every Tuesday</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {activeModal === 'hours' && (
+              <View>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>⏱ Working Hours & Shift</Text>
+                  <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.closeBtn}>
+                    <Text style={styles.closeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>{"Today's Shift Hours"}</Text>
+                    <Text style={styles.infoValue}>08:30 AM – 06:00 PM</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Assigned Route</Text>
+                    <Text style={styles.infoValue}>{courierData.subRoute}</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Duty Status</Text>
+                    <Text style={[styles.infoValue, { color: isOnDuty ? '#059669' : '#6B7280', fontWeight: '700' }]}>
+                      {isOnDuty ? '🟢 On Duty (Active)' : '⚪ Off Duty (Paused)'}
+                    </Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Active Dispatch Depot</Text>
+                    <Text style={styles.infoValue}>Kalutara Regional Fulfillment Hub</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Active Logged Hours</Text>
+                    <Text style={styles.infoValue}>5h 22m today</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {activeModal === 'support' && (
+              <View>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>📞 Courier Dispatch Support</Text>
+                  <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.closeBtn}>
+                    <Text style={styles.closeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Dispatch Hotline</Text>
+                    <Text style={[styles.infoValue, { color: '#00796B', fontWeight: '800' }]}>011 234 5678</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Rider Assistance</Text>
+                    <Text style={styles.infoValue}>24/7 Priority Courier Support</Text>
+                  </View>
+                  <View style={styles.infoRow}>
+                    <Text style={styles.infoLabel}>Central Depot</Text>
+                    <Text style={styles.infoValue}>No. 45, Temple Road, Kalutara</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL('tel:0112345678').catch(() => {})}
+                    style={styles.callDispatchBtn}
+                  >
+                    <Text style={styles.callDispatchBtnText}>📞 Call Dispatch Hotline</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              onPress={() => setActiveModal(null)}
+              style={styles.dismissBtn}
+            >
+              <Text style={styles.dismissBtnText}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* 5. Bottom Tab Navigation Bar (Profile active) */}
       <View
@@ -806,6 +1010,93 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 5,
     borderWidth: 1.6,
     borderBottomWidth: 0,
+  },
+
+  // ----------------------------------------------------
+  // 6. Modal / Bottom Sheet Styles
+  // ----------------------------------------------------
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111E1C',
+  },
+  closeBtn: {
+    padding: 6,
+  },
+  closeBtnText: {
+    fontSize: 16,
+    color: '#6B7280',
+    fontWeight: '700',
+  },
+  modalBody: {
+    paddingVertical: 14,
+    gap: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  infoLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  callDispatchBtn: {
+    backgroundColor: '#004D40',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  callDispatchBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  dismissBtn: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  dismissBtnText: {
+    color: '#374151',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
 
