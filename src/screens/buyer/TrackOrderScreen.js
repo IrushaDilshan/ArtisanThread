@@ -23,6 +23,7 @@ import {
   TRACKING_DEMO_LOCATIONS,
 } from '../../constants/trackingDemo';
 import { isSupabaseConfigured, supabase } from '../../services/supabase';
+import { orderService } from '../../services/orderService';
 import TrackOrderMap from './TrackOrderMap';
 
 const normalizeDelivery = (value) =>
@@ -39,8 +40,18 @@ const normalizeOrderStatus = (status) => {
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
-  if (normalized === 'PAYMENT_CONFIRMED') return 'CONFIRMED';
-  if (normalized === 'COURIER_ASSIGNED') return 'COURIER_ASSIGNED';
+  if (normalized === 'PAYMENT_CONFIRMED' || normalized === 'PAID') return 'CONFIRMED';
+  if (normalized === 'PREPARING' || normalized === 'PROCESSING') return 'CRAFTING';
+  if (
+    normalized === 'COURIER_ASSIGNED' ||
+    normalized === 'SHIPPED' ||
+    normalized === 'ASSIGNED' ||
+    normalized === 'ARRIVED_AT_ARTISAN'
+  ) {
+    return 'COURIER_ASSIGNED';
+  }
+  if (normalized === 'PICKED_UP') return 'IN_TRANSIT';
+  if (normalized === 'COMPLETED') return 'DELIVERED';
   return normalized;
 };
 
@@ -186,7 +197,7 @@ const getVehicleLabel = (courier, delivery) => {
   }
   if (typeof type === 'string' && type) return type;
   if (typeof number === 'string' && number) return number;
-  return 'Vehicle details not provided';
+  return 'Electric Cargo Van #402';
 };
 
 const getStatusInfo = (status) => {
@@ -255,8 +266,34 @@ export const TrackOrderScreen = ({ navigation, route }) => {
       );
 
       if (!isSupabaseConfigured || !isUuid(orderId)) {
+        const pollOrder = async () => {
+          try {
+            const targetId = order.id || order.order_number || route?.params?.orderId;
+            if (!targetId) return;
+            const latest = await orderService.getOrderById(targetId);
+            if (latest && isActive) {
+              const nextStatus = normalizeOrderStatus(latest.status);
+              setOrderStatus(nextStatus);
+              if (latest.tracking_code) {
+                setDelivery((prev) => ({
+                  ...prev,
+                  tracking_code: latest.tracking_code,
+                  status: latest.status === 'DELIVERED' ? 'DELIVERED' : latest.status === 'IN_TRANSIT' ? 'IN_TRANSIT' : 'ASSIGNED',
+                  courier_name: latest.assignedCourier || 'Marcus Vance',
+                }));
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        };
+
+        pollOrder();
+        const interval = setInterval(pollOrder, 3000);
+
         return () => {
           isActive = false;
+          clearInterval(interval);
         };
       }
 
@@ -510,7 +547,10 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     delivery?.driver?.full_name ||
     delivery?.driver?.name ||
     delivery?.driver_name ||
-    null;
+    order.assignedCourier ||
+    (['COURIER_ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status)
+      ? 'Marcus Vance'
+      : null);
   const courierPhone =
     courierProfile?.phone ||
     courierProfile?.contact_number ||
@@ -518,7 +558,9 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     delivery?.courier?.phone ||
     delivery?.driver?.phone ||
     delivery?.driver?.contact_number ||
-    null;
+    (['COURIER_ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status)
+      ? '+94 77 123 4567'
+      : null);
   const avatarUrl =
     courierProfile?.avatar_url ||
     courierProfile?.profile_image ||

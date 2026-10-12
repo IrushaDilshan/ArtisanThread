@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   RefreshControl,
   ActivityIndicator,
@@ -216,10 +215,14 @@ export const CourierHomeScreen = ({ navigation }) => {
               </Text>
             </View>
 
-            {/* Avatar Badge */}
-            <View style={styles.avatarBadge}>
+            {/* Avatar Badge (Tapping navigates to Courier Profile) */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate(ROUTES.COURIER.PROFILE)}
+              style={styles.avatarBadge}
+            >
               <Text style={styles.avatarText}>{avatarInitials}</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* 3 Horizontal Stats Cards inside Header */}
