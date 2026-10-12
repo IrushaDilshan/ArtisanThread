@@ -6,10 +6,9 @@ import {
   FlatList,
   TouchableOpacity,
   Dimensions,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
