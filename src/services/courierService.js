@@ -154,12 +154,76 @@ const saveDeliveries = async (deliveries) => {
   }
 };
 
+export const isDeliveryForCourier = (d, courierId, user = null) => {
+  if (!d) return false;
+
+  const currentId = courierId || user?.id;
+  const currentName = user?.name ? user.name.trim().toLowerCase() : null;
+  const currentPhone = user?.phone ? user.phone.replace(/[^0-9]/g, '') : null;
+
+  const dCourierId = d.courier_id || d.courierId;
+  const dCourierName = (d.courier_name || d.order?.assignedCourier || '').trim().toLowerCase();
+  const dCourierPhone = (d.courier_phone || '').replace(/[^0-9]/g, '');
+
+  // 1. Direct match on Courier ID (UUID or custom ID)
+  if (currentId && dCourierId && dCourierId === currentId) {
+    return true;
+  }
+
+  // 2. Direct match on Phone number
+  if (
+    currentPhone &&
+    dCourierPhone &&
+    currentPhone.length >= 7 &&
+    (currentPhone.endsWith(dCourierPhone) || dCourierPhone.endsWith(currentPhone))
+  ) {
+    return true;
+  }
+
+  // 3. Direct match on Courier Name
+  if (
+    currentName &&
+    dCourierName &&
+    (currentName === dCourierName ||
+      currentName.includes(dCourierName) ||
+      dCourierName.includes(currentName))
+  ) {
+    return true;
+  }
+
+  // 4. If assigned specifically to a DIFFERENT courier, DO NOT show to current courier
+  const isAssignedToOther =
+    (dCourierId &&
+      currentId &&
+      dCourierId !== currentId &&
+      dCourierId !== 'usr_courier_01' &&
+      dCourierId !== 'courier-demo') ||
+    (dCourierName &&
+      currentName &&
+      dCourierName !== currentName &&
+      dCourierName !== 'marcus vance' &&
+      dCourierName !== 'unassigned');
+
+  if (isAssignedToOther) {
+    return false;
+  }
+
+  // 5. Default/Demo unassigned deliveries without a specific owner are viewable
+  if (!dCourierId || dCourierId === 'courier-demo' || dCourierId === 'usr_courier_01') {
+    return true;
+  }
+
+  return false;
+};
+
 export const courierService = {
   /**
-   * Fetch active deliveries assigned to a courier with automatic fallback to active demo deliveries
+   * Fetch active deliveries assigned strictly to a specific courier with fallback
    */
-  async getAssignedDeliveries(courierId = null) {
+  async getAssignedDeliveries(courierId = null, user = null) {
     await loadDeliveries();
+
+    const results = [];
 
     if (isSupabaseConfigured) {
       try {
@@ -176,43 +240,35 @@ export const courierService = {
             .from('deliveries')
             .select(baseSelect)
             .eq('courier_id', courierId)
-            .neq('status', 'DELIVERED')
             .order('created_at', { ascending: false });
 
           if (!userError && userDeliveries && userDeliveries.length > 0) {
-            // Merge newly created local deliveries that aren't in Supabase yet
-            const merged = [...userDeliveries];
-            for (const local of localDeliveriesState) {
-              if (!merged.some(d => d.id === local.id || (d.tracking_code && d.tracking_code === local.tracking_code))) {
-                merged.unshift(local);
-              }
-            }
-            return merged;
-          }
-        }
-
-        const { data: allActive, error: allError } = await supabase
-          .from('deliveries')
-          .select(baseSelect)
-          .neq('status', 'DELIVERED')
-          .order('created_at', { ascending: false })
-          .limit(15);
-
-        if (!allError && allActive && allActive.length > 0) {
-          const merged = [...allActive];
-          for (const local of localDeliveriesState) {
-            if (!merged.some(d => d.id === local.id || (d.tracking_code && d.tracking_code === local.tracking_code))) {
-              merged.unshift(local);
+            for (const d of userDeliveries) {
+              results.push(d);
             }
           }
-          return merged;
         }
       } catch (err) {
         console.warn('Supabase deliveries fetch notice:', err.message);
       }
     }
 
-    return localDeliveriesState;
+    // Filter local deliveries specifically for this courier
+    for (const local of localDeliveriesState) {
+      if (isDeliveryForCourier(local, courierId, user)) {
+        if (
+          !results.some(
+            (d) =>
+              d.id === local.id ||
+              (d.tracking_code && d.tracking_code === local.tracking_code)
+          )
+        ) {
+          results.push(local);
+        }
+      }
+    }
+
+    return results;
   },
 
   /**
@@ -234,9 +290,11 @@ export const courierService = {
       id: `del-${order.id || Date.now()}`,
       order_id: order.db_id || order.id,
       courier_id: courierInfo.id || 'usr_courier_01',
-      courier_name: courierInfo.name || 'Marcus Vance',
+      courier_name: courierInfo.name || courierInfo.full_name || 'Marcus Vance',
+      courier_phone: courierInfo.phone || '',
       tracking_code: trackingCode,
       status: 'ASSIGNED',
+      total_amount: totalAmount,
       pickup_address: {
         name: order.artisanName || 'Takahashi Handloom & Indigo Studio',
         address_line1: '142 Temple Road',
@@ -412,12 +470,43 @@ export const courierService = {
     }
 
     const targetDelivery = localDeliveriesState.find(
-      (d) => d.id === deliveryId || d.tracking_code === deliveryId
+      (d) =>
+        d.id === deliveryId ||
+        d.tracking_code === deliveryId ||
+        (d.tracking_code && String(d.tracking_code).toUpperCase() === String(deliveryId).toUpperCase()) ||
+        d.order_id === deliveryId ||
+        d.order?.id === deliveryId
     );
 
-    const updated = localDeliveriesState.map((d) =>
-      d.id === deliveryId || d.tracking_code === deliveryId ? { ...d, ...updatePayload } : d
-    );
+    const updated = localDeliveriesState.map((d) => {
+      const isMatch =
+        d.id === deliveryId ||
+        d.tracking_code === deliveryId ||
+        (d.tracking_code && String(d.tracking_code).toUpperCase() === String(deliveryId).toUpperCase()) ||
+        d.order_id === deliveryId ||
+        d.order?.id === deliveryId;
+
+      if (!isMatch) return d;
+
+      const totalAmt =
+        extraFields.total_amount ||
+        d.total_amount ||
+        d.order?.total_amount ||
+        d.order?.rawPrice;
+
+      return {
+        ...d,
+        ...updatePayload,
+        total_amount: totalAmt,
+        order: d.order
+          ? {
+              ...d.order,
+              status: status === 'DELIVERED' ? 'DELIVERED' : d.order.status,
+              total_amount: totalAmt,
+            }
+          : d.order,
+      };
+    });
     await saveDeliveries(updated);
 
     if (_orderStatusListener) {
@@ -431,6 +520,10 @@ export const courierService = {
           _orderStatusListener(orderId, 'IN_TRANSIT');
         } else if (status === 'DELIVERED') {
           _orderStatusListener(orderId, 'DELIVERED');
+        } else if (status === 'RESCHEDULED') {
+          _orderStatusListener(orderId, 'RESCHEDULED');
+        } else if (status === 'RETURNED') {
+          _orderStatusListener(orderId, 'RETURNED');
         }
       }
     }

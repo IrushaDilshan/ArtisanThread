@@ -450,8 +450,10 @@ export const orderService = {
     }
 
     const order = localArtisanOrders[orderIndex];
-    const courierName = courierInfo.name || 'Marcus Vance';
+    const courierName = courierInfo.name || courierInfo.full_name || 'Marcus Vance';
     const courierId = courierInfo.id || 'usr_courier_01';
+    const courierPhone = courierInfo.phone || '';
+    const courierVehicle = courierInfo.vehicle || '';
     const trackingCode =
       order.tracking_code ||
       `ATH-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-2)}`;
@@ -461,6 +463,8 @@ export const orderService = {
       status: 'SHIPPED',
       assignedCourier: courierName,
       courierId,
+      courierPhone,
+      courierVehicle,
       tracking_code: trackingCode,
       due: 'In Transit',
       notes: `${order.notes || ''}\nHanded to Courier Partner ${courierName}. Tracking #${trackingCode}`.trim(),
@@ -474,6 +478,9 @@ export const orderService = {
     const delivery = await courierService.createDeliveryFromOrder(updatedOrder, {
       id: courierId,
       name: courierName,
+      full_name: courierName,
+      phone: courierPhone,
+      vehicle: courierVehicle,
     });
 
     // If Supabase is connected, update order status
