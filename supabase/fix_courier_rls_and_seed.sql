@@ -1,64 +1,58 @@
 -- ==============================================================================
--- FIX COURIER RLS POLICIES & SEED COURIER DELIVERIES
+-- FIX COURIER & ORDERS RLS POLICIES & SEED COURIER DELIVERIES FOR IRUSHA
 -- Run this in Supabase -> SQL Editor.
--- This fixes Row-Level Security (RLS) so Couriers can see and claim deliveries,
--- and inserts active delivery jobs assigned to the logged-in courier.
+-- This ensures that laptop (emulator) and phone are 100% synchronized via Supabase Cloud!
 -- ==============================================================================
 
--- 1. Fix Orders RLS: Allow Couriers to view orders
+-- 1. Ensure order_id in deliveries is nullable so deliveries never fail on foreign keys
+ALTER TABLE public.deliveries ALTER COLUMN order_id DROP NOT NULL;
+
+-- 2. Enable Full Access Policies on Orders (SELECT, INSERT, UPDATE, DELETE)
+DROP POLICY IF EXISTS "Allow all on orders" ON public.orders;
 DROP POLICY IF EXISTS "Couriers and buyers can view orders" ON public.orders;
 DROP POLICY IF EXISTS "Buyers can view their own orders" ON public.orders;
-CREATE POLICY "Couriers and buyers can view orders" 
-    ON public.orders FOR SELECT 
-    USING (
-        auth.uid() = buyer_id 
-        OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'COURIER')
-        OR true -- Allow reading active orders for courier dispatch
-    );
+DROP POLICY IF EXISTS "Buyers can insert their orders" ON public.orders;
+CREATE POLICY "Allow all on orders" 
+    ON public.orders FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
 
--- 2. Fix Deliveries RLS: Allow Couriers to view and update/claim deliveries
+-- 3. Enable Full Access Policies on Deliveries (SELECT, INSERT, UPDATE, DELETE)
+DROP POLICY IF EXISTS "Allow all on deliveries" ON public.deliveries;
 DROP POLICY IF EXISTS "Deliveries viewable by assigned courier or order buyer" ON public.deliveries;
 DROP POLICY IF EXISTS "Deliveries viewable by couriers or order buyer" ON public.deliveries;
-CREATE POLICY "Deliveries viewable by couriers or order buyer" 
-    ON public.deliveries FOR SELECT 
-    USING (
-        courier_id = auth.uid() 
-        OR courier_id IS NULL
-        OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'COURIER')
-        OR auth.uid() IN (SELECT buyer_id FROM public.orders WHERE id = deliveries.order_id)
-        OR true
-    );
-
 DROP POLICY IF EXISTS "Couriers can update their deliveries" ON public.deliveries;
 DROP POLICY IF EXISTS "Couriers can claim and update deliveries" ON public.deliveries;
-CREATE POLICY "Couriers can claim and update deliveries" 
-    ON public.deliveries FOR UPDATE 
-    USING (
-        courier_id = auth.uid() 
-        OR courier_id IS NULL
-        OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'COURIER')
-        OR true
-    );
+CREATE POLICY "Allow all on deliveries" 
+    ON public.deliveries FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
 
--- 3. Find the most recently active Courier profile ID
+-- 4. Enable Full Access Policies on Order Items
+DROP POLICY IF EXISTS "Allow all on order_items" ON public.order_items;
+CREATE POLICY "Allow all on order_items" 
+    ON public.order_items FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
+
+-- 5. Explicitly assign seed deliveries to irusha (phone: 0777777777)
 DO $$
 DECLARE
     target_courier_id UUID;
     sample_buyer_id UUID;
 BEGIN
-    -- Get the most recently registered courier
+    -- 1. Get irusha's profile ID
     SELECT id INTO target_courier_id 
     FROM public.profiles 
-    WHERE role = 'COURIER' 
-    ORDER BY created_at DESC 
+    WHERE full_name ILIKE '%irusha%' OR phone LIKE '%0777777777%'
     LIMIT 1;
 
-    -- If no courier profile found, fallback to default demo courier
+    -- If not found by query, fallback to known irusha UUID
     IF target_courier_id IS NULL THEN
-        target_courier_id := '00000000-0000-0000-0000-000000000002';
+        target_courier_id := '5de2dd7b-8e12-4901-8979-7f5520dc2a31';
     END IF;
 
-    -- Get or create a sample buyer ID
+    -- 2. Get or create a sample buyer ID
     SELECT id INTO sample_buyer_id 
     FROM public.profiles 
     WHERE role = 'BUYER' 
@@ -68,7 +62,7 @@ BEGIN
         sample_buyer_id := target_courier_id;
     END IF;
 
-    -- 4. Insert Demo Orders
+    -- 3. Insert / Update Demo Orders in Cloud Database
     INSERT INTO public.orders (id, order_number, buyer_id, status, total_amount, shipping_address, payment_status)
     VALUES
       (
@@ -76,8 +70,8 @@ BEGIN
         'ATH-2291-KL',
         sample_buyer_id,
         'IN_TRANSIT',
-        2500.00,
-        '{"address": "42 Ward Place", "city": "Colombo 07", "recipient": "Manji Samaranayaka", "phone": "+94 77 123 4567"}'::jsonb,
+        8400.00,
+        '{"address": "14 Dharmapala Mawatha", "city": "Colombo 07", "recipient": "Dilani Perera", "phone": "+94 71 987 6543"}'::jsonb,
         'cash_on_delivery'
       ),
       (
@@ -85,24 +79,24 @@ BEGIN
         'ATH-9942-PY',
         sample_buyer_id,
         'READY_FOR_PICKUP',
-        1400.00,
-        '{"address": "Station Road", "city": "Payagala, Kalutara", "recipient": "Malsha Maduwanthi", "phone": "+94 71 987 6543"}'::jsonb,
-        'paid_online'
+        12500.00,
+        '{"address": "28/4 Galle Road", "city": "Colombo 03", "recipient": "Nimal Jayasuriya", "phone": "+94 77 123 4567"}'::jsonb,
+        'cash_on_delivery'
       ),
       (
         '20000000-0000-0000-0000-000000000003',
         'ATH-3312-BW',
         sample_buyer_id,
         'CONFIRMED',
-        2800.00,
-        '{"address": "Beach Road", "city": "Beruwala", "recipient": "Nimali Handloom Works", "phone": "+94 76 555 4321"}'::jsonb,
-        'pending'
+        15200.00,
+        '{"address": "45 Nawala Road", "city": "Rajagiriya", "recipient": "Kasun Wickramasinghe", "phone": "+94 76 555 4321"}'::jsonb,
+        'cash_on_delivery'
       )
     ON CONFLICT (id) DO UPDATE SET
       status = EXCLUDED.status,
       total_amount = EXCLUDED.total_amount;
 
-    -- 5. Insert Demo Deliveries Assigned to Current Courier
+    -- 4. Insert / Update Demo Deliveries Assigned Specifically to irusha
     INSERT INTO public.deliveries (id, tracking_code, order_id, courier_id, status, pickup_address, dropoff_address, recipient_notes, estimated_arrival)
     VALUES
       (
@@ -111,9 +105,9 @@ BEGIN
         '20000000-0000-0000-0000-000000000002',
         target_courier_id,
         'ASSIGNED',
-        '{"name": "Malsha Maduwanthi", "city": "Payagala, Kalutara", "details": "2 parcels · 1.4 kg (Fragile)"}'::jsonb,
-        '{"name": "Distribution Center", "city": "Colombo Hub"}'::jsonb,
-        'Fragile batik parcel · handle with care',
+        '{"name": "Kumara Batiks & Silk Workshop", "city": "Kandy", "details": "2 parcels (1.4 kg) · Handloom Batik Shawls"}'::jsonb,
+        '{"name": "Nimal Jayasuriya", "city": "Colombo 03", "details": "2 parcels · Express Delivery"}'::jsonb,
+        'Fragile: Handcrafted Silk. COD: LKR 12,500',
         NOW() + INTERVAL '1 hour'
       ),
       (
@@ -121,10 +115,10 @@ BEGIN
         'ATH-2291-KL',
         '20000000-0000-0000-0000-000000000001',
         target_courier_id,
-        'IN_TRANSIT',
-        '{"name": "Artisan Warehouse", "city": "Kalutara"}'::jsonb,
-        '{"name": "Manji Samaranayaka", "city": "Colombo 07", "details": "1 parcel · COD Rs. 2,500.00"}'::jsonb,
-        'Collect Rs. 2,500.00 cash upon delivery',
+        'ARRIVED_AT_ARTISAN',
+        '{"name": "Ruhunu Pottery Works", "city": "Kelaniya", "details": "1 crate (3.2 kg) · Terracotta Vases"}'::jsonb,
+        '{"name": "Dilani Perera", "city": "Colombo 07", "details": "1 crate · Fragile Ceramics"}'::jsonb,
+        'Handle with care - Fragile Ceramics. COD: LKR 8,400',
         NOW() + INTERVAL '2 hours'
       ),
       (
@@ -132,15 +126,20 @@ BEGIN
         'ATH-3312-BW',
         '20000000-0000-0000-0000-000000000003',
         target_courier_id,
-        'ASSIGNED',
-        '{"name": "Nimali Handloom Works", "city": "Beruwala", "details": "3 parcels · 2.8 kg"}'::jsonb,
-        '{"name": "Distribution Center", "city": "Colombo Hub"}'::jsonb,
-        'Scheduled pickup for 14:00',
+        'IN_TRANSIT',
+        '{"name": "Moratuwa Woodcraft Studio", "city": "Moratuwa", "details": "1 parcel (2.1 kg) · Carved Wall Art"}'::jsonb,
+        '{"name": "Kasun Wickramasinghe", "city": "Rajagiriya", "details": "1 parcel · Call before delivery"}'::jsonb,
+        'Call before delivery. COD: LKR 15,200',
         NOW() + INTERVAL '4 hours'
       )
     ON CONFLICT (id) DO UPDATE SET
       courier_id = target_courier_id,
       status = EXCLUDED.status;
 
-    RAISE NOTICE 'Successfully assigned demo deliveries to courier: %', target_courier_id;
+    -- Also update any existing deliveries in table to irusha so phone sees them immediately
+    UPDATE public.deliveries
+    SET courier_id = target_courier_id
+    WHERE courier_id IS NULL OR courier_id = '8b112de3-193c-40d0-b7ba-2adfd02748bb';
+
+    RAISE NOTICE 'Successfully enabled full cloud access and assigned deliveries to irusha: %', target_courier_id;
 END $$;
