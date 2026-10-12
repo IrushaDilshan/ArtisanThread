@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
 	Alert,
 	Image,
@@ -11,10 +11,12 @@ import {
 	View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { COLORS } from '../../constants/colors';
 import { ROUTES } from '../../navigation/routes';
+import { orderService } from '../../services/orderService';
 
 const FILTERS = ['All orders', 'In progress', 'Completed'];
 
@@ -62,14 +64,100 @@ const ORDERS = [
 
 export const OrdersScreen = ({ navigation }) => {
 	const insets = useSafeAreaInsets();
+	const [ordersList, setOrdersList] = useState(ORDERS);
 	const [selectedFilter, setSelectedFilter] = useState('All orders');
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [search, setSearch] = useState('');
 	const [failedImages, setFailedImages] = useState({});
 
+	useFocusEffect(
+		useCallback(() => {
+			let isMounted = true;
+			const fetchOrders = async () => {
+				try {
+					const artisanOrders = await orderService.getArtisanOrders();
+					if (!isMounted || !Array.isArray(artisanOrders)) return;
+
+					const mappedFromStorage = artisanOrders.map((ord) => {
+						const isDelivered = ord.status === 'DELIVERED';
+						const isTransit = ord.status === 'IN_TRANSIT';
+						const isShipped = ord.status === 'SHIPPED' || ord.status === 'COURIER_ASSIGNED';
+
+						const statusType = isDelivered
+							? 'delivered'
+							: isTransit
+								? 'transit'
+								: isShipped
+									? 'shipped'
+									: 'pending';
+
+						const statusText = isDelivered
+							? 'Delivered'
+							: isTransit
+								? 'In Transit'
+								: isShipped
+									? 'Dispatched'
+									: ord.status === 'CRAFTING'
+										? 'Crafting'
+										: ord.status === 'READY_FOR_PICKUP'
+											? 'Ready for Pickup'
+											: ord.status === 'CONFIRMED'
+												? 'Payment Confirmed'
+												: 'Order Placed';
+
+						const formattedPrice = String(ord.rawPrice || ord.total_amount || 0).replace(/[^0-9]/g, '');
+
+						return {
+							id: ord.order_number || `#${ord.id}`,
+							rawId: ord.id,
+							date: ord.date || 'Today',
+							status: statusText,
+							statusType,
+							rawStatus: ord.status,
+							product: ord.item || 'Handcrafted Artisan Craft',
+							seller: ord.artisanName || 'Heritage Atelier Studio',
+							location: ord.destination?.split(',')?.pop()?.trim() || 'Central Studio',
+							quantity: ord.items?.[0]?.quantity || 1,
+							arrival: isDelivered
+								? 'Delivered & Completed'
+								: isTransit
+									? 'In transit with courier Marcus Vance'
+									: ord.assignedCourier
+										? `Assigned to ${ord.assignedCourier} · ${ord.tracking_code || 'ATH'}`
+										: 'Artisan Preparing Parcel',
+							total: formattedPrice || '15,000',
+							image:
+								ord.photo ||
+								'https://images.unsplash.com/photo-1606760227091-3dd850d97f1d?auto=format&fit=crop&w=400&q=85',
+							rawOrder: ord,
+						};
+					});
+
+					const combined = [...mappedFromStorage];
+					for (const demoOrder of ORDERS) {
+						if (!combined.some((o) => o.id === demoOrder.id || o.rawId === demoOrder.id)) {
+							combined.push(demoOrder);
+						}
+					}
+					setOrdersList(combined);
+				} catch (err) {
+					// fallback
+				}
+			};
+
+			fetchOrders();
+			const interval = setInterval(fetchOrders, 3000);
+
+			return () => {
+				isMounted = false;
+				clearInterval(interval);
+			};
+		}, [])
+	);
+
 	const visibleOrders = useMemo(() => {
 		const query = search.trim().toLowerCase();
-		return ORDERS.filter((order) => {
+		return ordersList.filter((order) => {
 			const matchesFilter =
 				selectedFilter === 'All orders' ||
 				(selectedFilter === 'In progress' && order.statusType !== 'delivered') ||
@@ -81,47 +169,54 @@ export const OrdersScreen = ({ navigation }) => {
 					.includes(query);
 			return matchesFilter && matchesSearch;
 		});
-	}, [search, selectedFilter]);
+	}, [ordersList, search, selectedFilter]);
 
-	const shapeOrderForNavigation = (order) => ({
-		...order,
-		title: order.product,
-		order_number: order.id,
-		total_amount: order.total,
-		items: [
-			{
-				title: order.product,
-				name: order.product,
-				image_url: order.image,
-				imageUrl: order.image,
-				price: order.total,
-				quantity: order.quantity,
-				artisan: {
-					name: order.seller,
-					location: order.location,
-				},
-				product: {
+	const shapeOrderForNavigation = (order) => {
+		if (order.rawOrder) {
+			return {
+				...order.rawOrder,
+				id: order.rawOrder.id || order.rawId || order.id,
+				order_number: order.rawOrder.order_number || order.id,
+				title: order.rawOrder.item || order.product,
+				total_amount: order.rawOrder.rawPrice || order.rawOrder.total_amount || order.total,
+				status: order.rawOrder.status || order.rawStatus || 'PENDING',
+			};
+		}
+		return {
+			...order,
+			title: order.product,
+			order_number: order.id,
+			total_amount: order.total,
+			status: order.statusType === 'delivered' ? 'DELIVERED' : order.statusType === 'transit' ? 'IN_TRANSIT' : 'SHIPPED',
+			items: [
+				{
 					title: order.product,
 					name: order.product,
 					image_url: order.image,
+					imageUrl: order.image,
+					price: order.total,
+					quantity: order.quantity,
 					artisan: {
 						name: order.seller,
 						location: order.location,
 					},
+					product: {
+						title: order.product,
+						name: order.product,
+						image_url: order.image,
+						artisan: {
+							name: order.seller,
+							location: order.location,
+						},
+					},
 				},
-			},
-		],
-	});
+			],
+		};
+	};
 
 	const viewDetails = (order) => {
 		const shaped = shapeOrderForNavigation(order);
-		try {
-			navigation?.navigate(ROUTES.BUYER.ORDER_STATUS, { orderId: order.id, order: shaped });
-		} catch (e) {
-			navigation?.navigate(ROUTES.BUYER.PRODUCT_DETAIL, {
-				product: { name: order.product, artisan: order.seller, price: order.total, image: order.image },
-			});
-		}
+		navigation?.navigate(ROUTES.BUYER.ORDER_STATUS, { orderId: shaped.id, order: shaped });
 	};
 
 	const handleOrderAction = (order) => {
@@ -134,11 +229,7 @@ export const OrdersScreen = ({ navigation }) => {
 		}
 
 		const shaped = shapeOrderForNavigation(order);
-		try {
-			navigation?.navigate(ROUTES.BUYER.TRACK_ORDER, { orderId: order.id, order: shaped });
-		} catch (e) {
-			navigation?.navigate(ROUTES.BUYER.ORDER_STATUS, { orderId: order.id, order: shaped });
-		}
+		navigation?.navigate(ROUTES.BUYER.TRACK_ORDER, { orderId: shaped.id, order: shaped });
 	};
 
 	const getStatusIcon = (type) => {

@@ -13,6 +13,7 @@ import { BuyerMember3Footer } from '../../components/BuyerMember3Footer';
 import { COLORS } from '../../constants/colors';
 import { RADIUS, SPACING } from '../../constants/theme';
 import { ROUTES } from '../../navigation/routes';
+import { orderService } from '../../services/orderService';
 
 const toAmount = (value) => {
   if (typeof value === 'number') {
@@ -87,6 +88,11 @@ export const PaymentHeldScreen = ({ navigation, route }) => {
         : !existingStatus || existingStatus === 'PENDING'
           ? 'CONFIRMED'
           : currentOrder.status;
+
+    if (currentOrder.id && orderStatus === 'CONFIRMED') {
+      orderService.updateOrderStatus(currentOrder.id, 'CONFIRMED').catch(() => {});
+      orderService.updatePaymentStatus(currentOrder.id, 'held').catch(() => {});
+    }
 
     navigation.navigate(ROUTES.BUYER.ORDER_STATUS, {
       checkout,

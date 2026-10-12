@@ -4,7 +4,6 @@ import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
-import { RoleSwitcher } from '../../components/RoleSwitcher';
 
 export const CourierEarningsScreen = () => {
   return (
@@ -15,10 +14,9 @@ export const CourierEarningsScreen = () => {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <RoleSwitcher />
 
         <Card style={styles.heroCard}>
-          <Text style={styles.heroSub}>TODAY'S NET EARNINGS</Text>
+          <Text style={styles.heroSub}>{"TODAY'S NET EARNINGS"}</Text>
           <Text style={styles.heroAmount}>LKR 14,250</Text>
           <Text style={styles.heroTrips}>6 Deliveries Completed • 0 Delays</Text>
         </Card>
