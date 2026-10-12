@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
 } from 'react-native';
@@ -86,11 +85,11 @@ export const CourierRoutesScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header Bar */}
-      <View style={[styles.headerBar, Platform.OS === 'android' && { paddingTop: insets.top }]}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -213,11 +212,15 @@ export const CourierRoutesScreen = ({ navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FAFAF9',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FAFAF9',
@@ -228,7 +231,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
