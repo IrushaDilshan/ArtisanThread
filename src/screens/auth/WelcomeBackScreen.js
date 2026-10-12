@@ -5,13 +5,12 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Image,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 import { Alert, ActivityIndicator } from 'react-native';
 import { supabase, isSupabaseConfigured } from '../../services';

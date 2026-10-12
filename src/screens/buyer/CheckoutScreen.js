@@ -285,6 +285,8 @@ export const CheckoutScreen = ({ navigation, route }) => {
         shippingAddress: address,
         totalAmount,
         paymentMethod,
+        buyerName: user?.name || user?.fullName || 'Sandunika Perera',
+        buyerPhone: user?.phone || '+94 77 123 4567',
       });
       const orderWithPayment = {
         ...order,
