@@ -38,18 +38,35 @@ const normalizeStatus = (status) => {
     return 'PENDING';
   }
 
-  const normalized = status.trim().toUpperCase();
+  const normalized = status.trim().toUpperCase().replace(/[\s-]+/g, '_');
+
+  if (normalized === 'PAYMENT_CONFIRMED' || normalized === 'PAID') return 'CONFIRMED';
+  if (normalized === 'PREPARING' || normalized === 'PROCESSING') return 'CRAFTING';
+  if (normalized === 'READY_FOR_PICKUP') return 'READY_FOR_PICKUP';
+  if (
+    normalized === 'COURIER_ASSIGNED' ||
+    normalized === 'SHIPPED' ||
+    normalized === 'ASSIGNED' ||
+    normalized === 'ARRIVED_AT_ARTISAN'
+  ) {
+    return 'COURIER_ASSIGNED';
+  }
+  if (normalized === 'PICKED_UP' || normalized === 'IN_TRANSIT') return 'IN_TRANSIT';
+  if (normalized === 'DELIVERED' || normalized === 'COMPLETED') return 'DELIVERED';
+  if (normalized === 'CANCELLED') return 'CANCELLED';
+
   return [
     'PENDING',
     'CONFIRMED',
     'CRAFTING',
     'READY_FOR_PICKUP',
+    'COURIER_ASSIGNED',
     'IN_TRANSIT',
     'DELIVERED',
     'CANCELLED',
   ].includes(normalized)
     ? normalized
-    : 'UNKNOWN';
+    : 'PENDING';
 };
 
 const toAmount = (value) => {
@@ -193,30 +210,32 @@ export const OrderStatusScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const { user, isLiveBackend } = useAuth();
   const order = route?.params?.order || {};
-  const orderRef = useRef(order);
-  orderRef.current = order;
+  const [currentOrder, setCurrentOrder] = useState(order);
+  const activeOrder = currentOrder || order;
+  const orderRef = useRef(activeOrder);
+  orderRef.current = activeOrder;
   const checkout = route?.params?.checkout || {};
   const payment = route?.params?.payment || {};
   const incomingStatus = normalizeStatus(
-    order.status || payment.order_status || 'PENDING'
+    activeOrder.status || payment.order_status || 'PENDING'
   );
   const [currentStatus, setCurrentStatus] = useState(incomingStatus);
   const [statusBeforeCancel, setStatusBeforeCancel] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const statusRef = useRef(incomingStatus);
-  const item = getFirstItem(order, checkout);
+  const item = getFirstItem(activeOrder, checkout);
   const itemImage = getItemImage(item);
-  const title = order.title || getItemTitle(item);
-  const total = useMemo(() => getTotal(order, checkout), [order, checkout]);
+  const title = activeOrder.title || getItemTitle(item);
+  const total = useMemo(() => getTotal(activeOrder, checkout), [activeOrder, checkout]);
   const paymentMethodValue =
     payment.payment_method ||
     payment.method ||
-    order.payment_method ||
+    activeOrder.payment_method ||
     checkout.paymentMethod ||
     '';
   const paymentStatusValue = String(
-    payment.payment_status || payment.status || order.payment_status || ''
+    payment.payment_status || payment.status || activeOrder.payment_status || ''
   ).toUpperCase();
   const isCashOnDelivery =
     /cash|delivery|cod/i.test(String(paymentMethodValue)) ||
@@ -225,12 +244,12 @@ export const OrderStatusScreen = ({ navigation, route }) => {
     ? 'Cash on Delivery'
     : paymentMethodValue
       ? 'Secure Escrow Payment'
-      : hasEscrowHeldPayment(payment, order)
+      : hasEscrowHeldPayment(payment, activeOrder)
         ? 'Secure Escrow Payment'
         : 'Not provided';
   const paymentStatusLabel = isCashOnDelivery
     ? 'Pending'
-    : hasEscrowHeldPayment(payment, order)
+    : hasEscrowHeldPayment(payment, activeOrder)
       ? 'Held in Escrow'
       : paymentStatusValue === 'REFUND_INITIATED'
         ? 'Refund Initiated'
@@ -241,8 +260,20 @@ export const OrderStatusScreen = ({ navigation, route }) => {
             ? 'Confirmed'
             : 'Pending';
   const orderNumber =
-    order.order_number || order.orderNumber || order.id || '0xT23456';
-  const orderId = order.id;
+    activeOrder.order_number || activeOrder.orderNumber || activeOrder.id || '0xT23456';
+  const orderId = activeOrder.id;
+
+  const trackingNumber =
+    activeOrder.tracking_code ||
+    activeOrder.order_number ||
+    orderId;
+  const buyerPinRaw =
+    activeOrder.delivery_code ||
+    (trackingNumber ? String(trackingNumber).replace(/[^0-9]/g, '').slice(-4) : '') ||
+    '1234';
+  const displayBuyerPin =
+    buyerPinRaw.length >= 4 ? buyerPinRaw.slice(-4) : buyerPinRaw.padStart(4, '0');
+
   const canCancelOrder = isCancellable(currentStatus);
   const activeStepIndex = ORDER_STEPS.findIndex(
     (step) => step.status === currentStatus
@@ -259,6 +290,12 @@ export const OrderStatusScreen = ({ navigation, route }) => {
     currentStatus === 'CANCELLED' ? cancelledStepIndex : activeStepIndex - 1;
 
   useEffect(() => {
+    if (route?.params?.order) {
+      setCurrentOrder(route.params.order);
+    }
+  }, [route?.params?.order]);
+
+  useEffect(() => {
     statusRef.current = incomingStatus;
     setCurrentStatus(incomingStatus);
   }, [incomingStatus]);
@@ -267,59 +304,73 @@ export const OrderStatusScreen = ({ navigation, route }) => {
     useCallback(() => {
       let isActive = true;
 
-      if (!isLiveBackend || !user?.id || !orderId) {
-        return () => {
-          isActive = false;
-        };
-      }
+      const refreshOrderStatus = async () => {
+        try {
+          const targetId =
+            activeOrder.id ||
+            activeOrder.order_number ||
+            activeOrder.orderNumber ||
+            orderNumber;
+          if (!targetId) return;
 
-      orderService
-        .getBuyerOrders(user.id)
-        .then((orders) => {
-          if (!isActive) {
-            return;
-          }
-
-          const latestOrder = orders.find(
-            (candidate) => String(candidate.id) === String(orderId)
-          );
-          if (latestOrder) {
+          const latestOrder = await orderService.getOrderById(targetId);
+          if (latestOrder && isActive) {
+            setCurrentOrder((prev) => ({ ...prev, ...latestOrder }));
             const latestStatus = normalizeStatus(latestOrder.status);
-            statusRef.current = latestStatus;
-            setCurrentStatus(latestStatus);
-            navigation.setParams({
-              order: { ...orderRef.current, ...latestOrder },
-            });
+            if (latestStatus && latestStatus !== 'UNKNOWN') {
+              statusRef.current = latestStatus;
+              setCurrentStatus(latestStatus);
+            }
           }
-        })
-        .catch((error) => {
-          if (isActive) {
-            Alert.alert(
-              'Unable to refresh order',
-              error?.message || 'Please try again later.'
-            );
-          }
-        });
+        } catch (error) {
+          // ignore background poll errors
+        }
+      };
+
+      refreshOrderStatus();
+      const interval = setInterval(refreshOrderStatus, 3000);
 
       return () => {
         isActive = false;
+        clearInterval(interval);
       };
-    }, [isLiveBackend, navigation, orderId, user?.id])
+    }, [activeOrder.id, activeOrder.order_number, activeOrder.orderNumber, orderNumber])
   );
 
   const getStepTime = (step, index) => {
-    if (index === 0 && order.created_at) {
-      return new Date(order.created_at).toLocaleString();
+    const ord = activeOrder;
+    if (index === 0 && (ord.created_at || ord.date)) {
+      return ord.date || new Date(ord.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     }
-    if (step.status === 'CONFIRMED' && payment.created_at) {
-      return new Date(payment.created_at).toLocaleString();
+    if (step.status === 'CONFIRMED') {
+      if (payment.created_at || ord.date) {
+        return ord.date || new Date(payment.created_at || ord.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+      }
+      return 'Payment confirmed in Escrow';
+    }
+    if (step.status === 'CRAFTING') {
+      return ord.status === 'CRAFTING' ? 'Crafting in artisan atelier' : 'Workshop Preparation';
+    }
+    if (step.status === 'READY_FOR_PICKUP') {
+      return ord.status === 'READY_FOR_PICKUP' ? 'Packaged & ready for courier' : 'Quality inspected & boxed';
+    }
+    if (step.status === 'COURIER_ASSIGNED') {
+      const courier = ord.assignedCourier || 'Marcus Vance';
+      const tracking = ord.tracking_code ? ` · ${ord.tracking_code}` : '';
+      return `${courier}${tracking}`;
+    }
+    if (step.status === 'IN_TRANSIT') {
+      return 'Courier en route to delivery address';
     }
     if (step.status === 'DELIVERED') {
       const estimate =
-        order.delivery?.estimated_arrival ||
-        order.estimated_arrival ||
-        order.estimated_delivery;
-      return estimate ? `Estimated: ${estimate}` : step.time;
+        ord.delivery?.estimated_arrival ||
+        ord.estimated_arrival ||
+        ord.estimated_delivery;
+      if (currentStatus === 'DELIVERED') {
+        return 'Delivered & Handed to Recipient';
+      }
+      return estimate ? `Estimated: ${estimate}` : 'Estimated: 1-2 days';
     }
     return step.time;
   };
@@ -420,9 +471,10 @@ export const OrderStatusScreen = ({ navigation, route }) => {
 
   const handleTrackOrder = () => {
     navigation.navigate(ROUTES.BUYER.TRACK_ORDER, {
-      order,
+      order: activeOrder,
+      orderId: activeOrder.id,
       checkout,
-      delivery: route?.params?.delivery || order.delivery,
+      delivery: route?.params?.delivery || activeOrder.delivery,
       payment,
       currentStatus,
     });
@@ -494,6 +546,26 @@ export const OrderStatusScreen = ({ navigation, route }) => {
             </Text>
           </View>
         </Card>
+
+        {/* 4-Digit Buyer Delivery Handover PIN */}
+        {(currentStatus === 'COURIER_ASSIGNED' || currentStatus === 'IN_TRANSIT' || currentStatus === 'READY_FOR_PICKUP' || currentStatus === 'DELIVERED') && (
+          <Card style={styles.deliveryPinCard}>
+            <View style={styles.deliveryPinRow}>
+              <View style={styles.deliveryPinIconBox}>
+                <Text style={styles.deliveryPinIcon}>🔐</Text>
+              </View>
+              <View style={styles.deliveryPinTextSide}>
+                <Text style={styles.deliveryPinTitle}>Delivery Handover PIN</Text>
+                <Text style={styles.deliveryPinSubtitle}>
+                  Read this 4-digit verification code to the courier to confirm delivery
+                </Text>
+              </View>
+              <View style={styles.deliveryPinBadge}>
+                <Text style={styles.deliveryPinDigits}>{displayBuyerPin}</Text>
+              </View>
+            </View>
+          </Card>
+        )}
 
         <Card style={styles.timelineCard}>
           <Text style={styles.sectionTitle}>Order Timeline</Text>
@@ -921,6 +993,55 @@ const styles = StyleSheet.create({
   confirmCancelButton: {
     alignSelf: 'stretch',
     marginTop: SPACING.sm,
+  },
+  deliveryPinCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1.5,
+  },
+  deliveryPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deliveryPinIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  deliveryPinIcon: {
+    fontSize: 20,
+  },
+  deliveryPinTextSide: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  deliveryPinTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  deliveryPinSubtitle: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+  },
+  deliveryPinBadge: {
+    backgroundColor: '#004D40',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  deliveryPinDigits: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });
 

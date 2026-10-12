@@ -224,4 +224,101 @@ export const authService = {
     if (error) throw error;
     return data;
   },
+
+  /**
+   * Fetch all registered courier partners from the database profiles with offline fallback
+   */
+  async getRegisteredCouriers() {
+    const defaultCouriers = [
+      {
+        id: '5de2dd7b-8e12-4901-8979-7f5520dc2a31',
+        full_name: 'irusha',
+        phone: '0777777777',
+        badge: 'Express Delivery Partner',
+        location: 'Kalutara & Suburbs',
+        vehicle: 'Electric Cargo Van #402',
+        rating: '4.9 ★',
+      },
+      {
+        id: 'c91d74af-47f7-4d01-888a-cfbb1e9b9eec',
+        full_name: 'kasun',
+        phone: '0999999999',
+        badge: 'Priority Dispatcher',
+        location: 'Colombo 03 & Greater Colombo',
+        vehicle: 'Hero Dawn 125 Bike',
+        rating: '4.8 ★',
+      },
+      {
+        id: '8b112de3-193c-40d0-b7ba-2adfd02748bb',
+        full_name: 'ruwan',
+        phone: '0766666666',
+        badge: 'Regional Carrier',
+        location: 'Galle & Southern Belt',
+        vehicle: 'Tuk-Tuk Cargo Carrier',
+        rating: '4.7 ★',
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000002',
+        full_name: 'Kavinda Fernando',
+        phone: '+94 77 234 5678',
+        badge: 'Eco Express Partner',
+        location: 'Western Coastal Route',
+        vehicle: 'Electric Cargo Van #402',
+        rating: '4.9 ★',
+      },
+      {
+        id: 'usr_courier_01',
+        full_name: 'Marcus Vance',
+        phone: '+94 77 123 4567',
+        badge: 'High-Volume Carrier',
+        location: 'Kandy & Central Zone',
+        vehicle: 'Cargo Van Express',
+        rating: '4.95 ★',
+      },
+    ];
+
+    if (!isSupabaseConfigured || !supabase) {
+      return defaultCouriers;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .ilike('role', 'courier');
+
+      if (!error && data && data.length > 0) {
+        // Map Supabase profiles and merge with default details
+        const combined = [...data.map((c) => {
+          const match = defaultCouriers.find(
+            (f) =>
+              f.id === c.id ||
+              (f.phone && c.phone && f.phone.replace(/[^0-9]/g, '') === c.phone.replace(/[^0-9]/g, '')) ||
+              (f.full_name && c.full_name && f.full_name.toLowerCase() === c.full_name.toLowerCase())
+          );
+          return {
+            id: c.id,
+            full_name: c.full_name || match?.full_name || 'Courier Partner',
+            phone: c.phone || match?.phone || '0770000000',
+            badge: c.badge || match?.badge || 'Verified Courier',
+            location: c.location || match?.location || 'Western Province',
+            vehicle: c.metadata?.vehicle || match?.vehicle || 'Delivery Van',
+            rating: c.metadata?.rating || match?.rating || '4.8 ★',
+          };
+        })];
+
+        // Also ensure default couriers (like irusha / kasun / ruwan) exist in the list
+        for (const def of defaultCouriers) {
+          if (!combined.some(c => c.id === def.id || (c.full_name && c.full_name.toLowerCase() === def.full_name.toLowerCase()))) {
+            combined.push(def);
+          }
+        }
+        return combined;
+      }
+    } catch (err) {
+      console.warn('getRegisteredCouriers notice:', err.message);
+    }
+
+    return defaultCouriers;
+  },
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
@@ -18,23 +19,49 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
+import { ROUTES } from '../../navigation/routes';
+import { orderService } from '../../services/orderService';
 
 const AVAILABLE_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-export const ArtisanDashboardScreen = () => {
+export const ArtisanDashboardScreen = ({ navigation }) => {
   const { user } = useAuth();
+  const [orders, setOrders] = useState([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      orderService.getArtisanOrders().then((data) => {
+        if (isMounted) setOrders(data || []);
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
+
+  const pendingCount = orders.filter(
+    (o) =>
+      !o.status ||
+      o.status === 'PENDING' ||
+      o.status === 'CONFIRMED' ||
+      o.status === 'CRAFTING' ||
+      o.status === 'READY_FOR_PICKUP'
+  ).length;
 
   const metrics = [
     { label: 'Active Crafts', val: '24', icon: '🏺' },
-    { label: 'Orders Pending', val: '7', icon: '⏳' },
+    { label: 'Orders Pending', val: String(orders.length > 0 ? pendingCount : 2), icon: '⏳' },
     { label: 'Monthly Sales', val: 'LKR 384,000', icon: '📈' },
     { label: 'Artisan Rating', val: '4.9★', icon: '✨' },
   ];
 
-  const recentOrders = [
-    { id: '#AT-1049', item: 'Indigo Silk Scarf (Qty 2)', buyer: 'Maya Lin', status: 'Needs Packaging' },
-    { id: '#AT-1048', item: 'Ceramic Matcha Bowl', buyer: 'Julian Moore', status: 'Ready for Courier' },
-  ];
+  const recentOrders = orders.length > 0
+    ? orders.slice(0, 3)
+    : [
+        { id: 'AT-1049', item: 'Indigo Silk Scarf (Qty 2)', buyer: 'Maya Lin', status: 'PENDING' },
+        { id: 'AT-1048', item: 'Ceramic Matcha Bowl', buyer: 'Julian Moore', status: 'PENDING' },
+      ];
 
   // Interactive Inventory & Stock state with real photo URLs
   const [inventory, setInventory] = useState([
@@ -414,20 +441,36 @@ export const ArtisanDashboardScreen = () => {
         {/* Recent Inquiries & Orders */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Artisan Orders To Fulfill</Text>
+          <TouchableOpacity
+            onPress={() => navigation?.navigate(ROUTES.ARTISAN.ORDERS)}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.primary }}>
+              View All Orders →
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.ordersList}>
           {recentOrders.map((ord) => (
-            <Card key={ord.id} style={styles.orderRow}>
-              <View>
-                <Text style={styles.ordId}>{ord.id}</Text>
-                <Text style={styles.ordItem}>{ord.item}</Text>
-                <Text style={styles.ordBuyer}>Client: {ord.buyer}</Text>
-              </View>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusText}>{ord.status}</Text>
-              </View>
-            </Card>
+            <TouchableOpacity
+              key={ord.id}
+              onPress={() => navigation?.navigate(ROUTES.ARTISAN.ORDERS)}
+              activeOpacity={0.85}
+            >
+              <Card style={styles.orderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ordId}>#{ord.id}</Text>
+                  <Text style={styles.ordItem} numberOfLines={1}>
+                    {ord.item}
+                  </Text>
+                  <Text style={styles.ordBuyer}>Client: {ord.buyer}</Text>
+                </View>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusText}>{ord.status}</Text>
+                </View>
+              </Card>
+            </TouchableOpacity>
           ))}
         </View>
       </ScrollView>

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Linking,
   Platform,
@@ -14,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 import { courierService } from '../../services/courierService';
+import { orderService } from '../../services/orderService';
 
 // Interactive Vector Live Navigation Map Preview
 const NavigationMapPreview = ({
@@ -156,37 +156,72 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState('route');
   const [hasArrived, setHasArrived] = useState(false);
   const [deliveryData, setDeliveryData] = useState(null);
+  const [matchedOrder, setMatchedOrder] = useState(null);
 
   const trackingId = route?.params?.trackingId || 'ATH-9942-PY';
 
-  // Load active delivery details dynamically
+  // Load active delivery and matched order details dynamically
   useEffect(() => {
     let isMounted = true;
-    courierService.verifyTrackingCode(trackingId).then((data) => {
-      if (isMounted && data) {
-        setDeliveryData(data);
-      }
-    }).catch(() => {});
+    (async () => {
+      try {
+        const [data, ord] = await Promise.all([
+          courierService.verifyTrackingCode(trackingId),
+          orderService.getOrderById(trackingId),
+        ]);
+        if (isMounted) {
+          if (data) setDeliveryData(data);
+          if (ord) setMatchedOrder(ord);
+          else if (data?.order_id) {
+            const byId = await orderService.getOrderById(data.order_id);
+            if (isMounted && byId) setMatchedOrder(byId);
+          }
+        }
+      } catch (_) {}
+    })();
     return () => { isMounted = false; };
   }, [trackingId]);
 
   const buyerName =
+    route?.params?.buyerName ||
+    matchedOrder?.buyer ||
     deliveryData?.order?.buyer?.full_name ||
     deliveryData?.dropoff_address?.name ||
-    'Nimal Jayasuriya';
+    'Customer Delivery';
   const buyerPhone =
+    matchedOrder?.phone ||
     deliveryData?.order?.buyer?.phone ||
     deliveryData?.dropoff_address?.phone ||
     '077 123 4567';
   const pickupCity = deliveryData?.pickup_address?.city || 'Payagala';
-  const dropoffCity = deliveryData?.dropoff_address?.city || 'Colombo 03';
-  const dropoffStreet = deliveryData?.dropoff_address?.address_line1 || '28/4 Galle Road';
+  const dropoffCity =
+    matchedOrder?.destination?.split(',')?.pop()?.trim() ||
+    deliveryData?.dropoff_address?.city ||
+    'Colombo 03';
+  const dropoffStreet =
+    matchedOrder?.destination ||
+    deliveryData?.dropoff_address?.address_line1 ||
+    '28/4 Galle Road';
   const dropoffLat = deliveryData?.dropoff_lat || 6.9271;
   const dropoffLng = deliveryData?.dropoff_lng || 79.8612;
-  const totalAmount = deliveryData?.order?.total_amount
-    ? Number(deliveryData.order.total_amount)
-    : 12500;
-  const formattedCod = `LKR ${totalAmount.toLocaleString()}`;
+  const totalAmount =
+    route?.params?.totalAmount ||
+    matchedOrder?.total_amount ||
+    matchedOrder?.rawPrice ||
+    (deliveryData?.order?.total_amount ? Number(deliveryData.order.total_amount) : 0);
+  const formattedCod = `LKR ${Number(totalAmount).toLocaleString('en-LK')}`;
+
+  const isCod =
+    matchedOrder?.payment_status === 'cash_on_delivery' ||
+    matchedOrder?.payment_method === 'Cash on Delivery' ||
+    deliveryData?.order?.payment_status === 'cash_on_delivery' ||
+    /cash|cod/i.test(deliveryData?.recipient_notes || '');
+
+  const artisanName =
+    route?.params?.artisanName ||
+    matchedOrder?.artisanName ||
+    deliveryData?.pickup_address?.name ||
+    'Malsha Maduwanthi';
 
   // Launch Google Maps GPS Turn-by-Turn Navigation to Buyer destination
   const handleNavigate = () => {
@@ -220,6 +255,9 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
     if (navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.DELIVERY_FAILED, {
         trackingId,
+        buyerName,
+        artisanName,
+        jobId: route?.params?.jobId || deliveryData?.id,
       });
     }
   };
@@ -236,6 +274,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
   };
 
   const handleTabPress = (tabKey) => {
+    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
@@ -248,11 +287,11 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Bar with Back Button & Tracking ID */}
-      <View style={[styles.headerContainer, Platform.OS === 'android' && { paddingTop: insets.top }]}>
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -345,25 +384,46 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* 4. Cash on Delivery (COD) Collection Box */}
-        <View style={styles.codCard}>
-          <Text
-            style={styles.codTitle}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
-            Collect {formattedCod} on delivery
-          </Text>
-          <Text
-            style={styles.codSubtitle}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
-            Cash on delivery · exact change preferred
-          </Text>
-        </View>
+        {/* 4. Payment Collection / Escrow Status Card */}
+        {isCod ? (
+          <View style={styles.codCard}>
+            <Text
+              style={styles.codTitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              Collect {formattedCod} on delivery
+            </Text>
+            <Text
+              style={styles.codSubtitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              Cash on delivery · exact change preferred
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.codCard, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+            <Text
+              style={[styles.codTitle, { color: '#047857' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              🛡️ Secure Escrow · {formattedCod} Paid
+            </Text>
+            <Text
+              style={[styles.codSubtitle, { color: '#065F46' }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              Prepaid online · Do not collect cash from customer
+            </Text>
+          </View>
+        )}
 
         {/* 5. Action Area & Action Buttons */}
         <View style={styles.actionSection}>
@@ -374,7 +434,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
             style={styles.cantCompleteLinkWrapper}
           >
             <Text style={styles.cantCompleteLinkText}>
-              Can't complete this delivery
+              {"Can't complete this delivery"}
             </Text>
           </TouchableOpacity>
 
@@ -507,11 +567,15 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -521,7 +585,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
   backButton: {

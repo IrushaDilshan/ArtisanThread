@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Alert,
   KeyboardAvoidingView,
@@ -14,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
+import { courierService, orderService } from '../../services';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -70,6 +70,8 @@ const RESCHEDULE_TIMES = [
 export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('route');
+  const [deliveryData, setDeliveryData] = useState(null);
+  const [matchedOrder, setMatchedOrder] = useState(null);
 
   // Selected Reason Radio (defaults to "Nobody was at the address" matching UI)
   const [selectedReason, setSelectedReason] = useState('Nobody was at the address');
@@ -82,10 +84,62 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
 
   const trackingId = route?.params?.trackingId || 'ATH-2291-KL';
 
-  const handleReschedule = () => {
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const [del, ord] = await Promise.all([
+          courierService.verifyTrackingCode(trackingId),
+          orderService.getOrderById(trackingId),
+        ]);
+        if (isMounted) {
+          if (del) setDeliveryData(del);
+          if (ord) setMatchedOrder(ord);
+          else if (del?.order_id) {
+            const byId = await orderService.getOrderById(del.order_id);
+            if (isMounted && byId) setMatchedOrder(byId);
+          }
+        }
+      } catch (_) {}
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [trackingId]);
+
+  const artisanName =
+    route?.params?.artisanName ||
+    matchedOrder?.artisanName ||
+    deliveryData?.pickup_address?.name ||
+    'Malsha Maduwanthi';
+  const artisanFirstName = artisanName.split(' ')[0] || 'Malsha';
+
+  const handleReschedule = async () => {
+    try {
+      // 1. Update delivery status in courierService
+      await courierService.updateDeliveryStatus(trackingId, 'RESCHEDULED', {
+        rescheduled_time: selectedTime,
+        reschedule_reason: selectedReason,
+        unsuccessful_note: note,
+        rescheduled_at: new Date().toISOString(),
+      });
+
+      // 2. Also ensure order is updated in orderService
+      const targetOrderId =
+        matchedOrder?.id ||
+        deliveryData?.order_id ||
+        deliveryData?.order?.id ||
+        trackingId;
+      if (targetOrderId) {
+        await orderService.updateOrderStatus(targetOrderId, 'RESCHEDULED');
+      }
+    } catch (e) {
+      console.warn('Reschedule status update error:', e.message);
+    }
+
     Alert.alert(
       'Delivery Rescheduled ⏱️',
-      `Parcel ${trackingId} is scheduled to re-attempt delivery ${selectedTime.toLowerCase()}.\n\nReason: "${selectedReason}"\nBoth buyer and artisan have been updated.`,
+      `Parcel ${trackingId} is scheduled to re-attempt delivery ${selectedTime.toLowerCase()}.\n\nReason: "${selectedReason}"\nBoth buyer and ${artisanFirstName} have been updated.`,
       [
         {
           text: 'Back to Jobs',
@@ -98,13 +152,34 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
   const handleReturn = () => {
     Alert.alert(
       'Return to Artisan? ↩️',
-      `Mark parcel ${trackingId} for return to Malsha Maduwanthi?\n\nReason: "${selectedReason}"`,
+      `Mark parcel ${trackingId} for return to ${artisanName}?\n\nReason: "${selectedReason}"`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Confirm Return',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            try {
+              // 1. Update delivery status in courierService
+              await courierService.updateDeliveryStatus(trackingId, 'RETURNED', {
+                return_reason: selectedReason,
+                unsuccessful_note: note,
+                returned_at: new Date().toISOString(),
+              });
+
+              // 2. Also ensure order is updated in orderService
+              const targetOrderId =
+                matchedOrder?.id ||
+                deliveryData?.order_id ||
+                deliveryData?.order?.id ||
+                trackingId;
+              if (targetOrderId) {
+                await orderService.updateOrderStatus(targetOrderId, 'RETURNED');
+              }
+            } catch (e) {
+              console.warn('Return status update error:', e.message);
+            }
+
             Alert.alert(
               'Return Initiated',
               `Return manifest updated. Keep parcel safe in transit until handover to artisan.`,
@@ -122,6 +197,7 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
   };
 
   const handleTabPress = (tabKey) => {
+    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
@@ -134,11 +210,11 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Section */}
-      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -161,11 +237,11 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
         >
           {/* Subtitle description */}
           <Text style={styles.subtitleText}>
-            The buyer and Malsha both see whatever you record here, so keep it accurate.
+            The buyer and {artisanFirstName} both see whatever you record here, so keep it accurate.
           </Text>
 
           {/* 2. Reason Selection Radio Group */}
-          <Text style={styles.sectionHeading}>Why couldn't it be delivered?</Text>
+          <Text style={styles.sectionHeading}>{"Why couldn't it be delivered?"}</Text>
           <View style={styles.radioGroup}>
             {REASONS.map((reason) => {
               const isSelected = selectedReason === reason;
@@ -345,11 +421,15 @@ export const DeliveryUnsuccessfulScreen = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -366,7 +446,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 6,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
   backButton: {

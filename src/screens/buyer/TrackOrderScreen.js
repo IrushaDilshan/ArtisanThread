@@ -23,6 +23,7 @@ import {
   TRACKING_DEMO_LOCATIONS,
 } from '../../constants/trackingDemo';
 import { isSupabaseConfigured, supabase } from '../../services/supabase';
+import { orderService } from '../../services/orderService';
 import TrackOrderMap from './TrackOrderMap';
 
 const normalizeDelivery = (value) =>
@@ -39,8 +40,18 @@ const normalizeOrderStatus = (status) => {
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
-  if (normalized === 'PAYMENT_CONFIRMED') return 'CONFIRMED';
-  if (normalized === 'COURIER_ASSIGNED') return 'COURIER_ASSIGNED';
+  if (normalized === 'PAYMENT_CONFIRMED' || normalized === 'PAID') return 'CONFIRMED';
+  if (normalized === 'PREPARING' || normalized === 'PROCESSING') return 'CRAFTING';
+  if (
+    normalized === 'COURIER_ASSIGNED' ||
+    normalized === 'SHIPPED' ||
+    normalized === 'ASSIGNED' ||
+    normalized === 'ARRIVED_AT_ARTISAN'
+  ) {
+    return 'COURIER_ASSIGNED';
+  }
+  if (normalized === 'PICKED_UP') return 'IN_TRANSIT';
+  if (normalized === 'COMPLETED') return 'DELIVERED';
   return normalized;
 };
 
@@ -186,7 +197,7 @@ const getVehicleLabel = (courier, delivery) => {
   }
   if (typeof type === 'string' && type) return type;
   if (typeof number === 'string' && number) return number;
-  return 'Vehicle details not provided';
+  return 'Electric Cargo Van #402';
 };
 
 const getStatusInfo = (status) => {
@@ -255,8 +266,34 @@ export const TrackOrderScreen = ({ navigation, route }) => {
       );
 
       if (!isSupabaseConfigured || !isUuid(orderId)) {
+        const pollOrder = async () => {
+          try {
+            const targetId = order.id || order.order_number || route?.params?.orderId;
+            if (!targetId) return;
+            const latest = await orderService.getOrderById(targetId);
+            if (latest && isActive) {
+              const nextStatus = normalizeOrderStatus(latest.status);
+              setOrderStatus(nextStatus);
+              if (latest.tracking_code) {
+                setDelivery((prev) => ({
+                  ...prev,
+                  tracking_code: latest.tracking_code,
+                  status: latest.status === 'DELIVERED' ? 'DELIVERED' : latest.status === 'IN_TRANSIT' ? 'IN_TRANSIT' : 'ASSIGNED',
+                  courier_name: latest.assignedCourier || 'Marcus Vance',
+                }));
+              }
+            }
+          } catch (e) {
+            // ignore
+          }
+        };
+
+        pollOrder();
+        const interval = setInterval(pollOrder, 3000);
+
         return () => {
           isActive = false;
+          clearInterval(interval);
         };
       }
 
@@ -510,7 +547,10 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     delivery?.driver?.full_name ||
     delivery?.driver?.name ||
     delivery?.driver_name ||
-    null;
+    order.assignedCourier ||
+    (['COURIER_ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status)
+      ? 'Marcus Vance'
+      : null);
   const courierPhone =
     courierProfile?.phone ||
     courierProfile?.contact_number ||
@@ -518,7 +558,9 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     delivery?.courier?.phone ||
     delivery?.driver?.phone ||
     delivery?.driver?.contact_number ||
-    null;
+    (['COURIER_ASSIGNED', 'IN_TRANSIT', 'DELIVERED'].includes(status)
+      ? '+94 77 123 4567'
+      : null);
   const avatarUrl =
     courierProfile?.avatar_url ||
     courierProfile?.profile_image ||
@@ -529,6 +571,18 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     delivery?.courier_avatar ||
     null;
   const routeCoordinates = points;
+
+  const trackingNumber =
+    order.tracking_code ||
+    delivery?.tracking_code ||
+    orderId;
+  const buyerPinRaw =
+    delivery?.delivery_code ||
+    order?.delivery_code ||
+    (trackingNumber ? String(trackingNumber).replace(/[^0-9]/g, '').slice(-4) : '') ||
+    '1234';
+  const displayBuyerPin =
+    buyerPinRaw.length >= 4 ? buyerPinRaw.slice(-4) : buyerPinRaw.padStart(4, '0');
 
   return (
     <View style={styles.container}>
@@ -653,6 +707,26 @@ export const TrackOrderScreen = ({ navigation, route }) => {
             </Text>
           )}
         </Card>
+
+        {/* 4-Digit Buyer Delivery Handover PIN */}
+        {courierAssigned && (
+          <Card style={styles.deliveryPinCard}>
+            <View style={styles.deliveryPinRow}>
+              <View style={styles.deliveryPinIconBox}>
+                <Text style={styles.deliveryPinIcon}>🔐</Text>
+              </View>
+              <View style={styles.deliveryPinTextSide}>
+                <Text style={styles.deliveryPinTitle}>Delivery Handover PIN</Text>
+                <Text style={styles.deliveryPinSubtitle}>
+                  Read this 4-digit verification code to the courier to confirm delivery
+                </Text>
+              </View>
+              <View style={styles.deliveryPinBadge}>
+                <Text style={styles.deliveryPinDigits}>{displayBuyerPin}</Text>
+              </View>
+            </View>
+          </Card>
+        )}
 
         {courierAssigned && courierPhone && status !== 'CANCELLED' ? (
           <Button
@@ -879,6 +953,55 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
     marginTop: SPACING.xs,
+  },
+  deliveryPinCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1.5,
+  },
+  deliveryPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deliveryPinIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  deliveryPinIcon: {
+    fontSize: 20,
+  },
+  deliveryPinTextSide: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  deliveryPinTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  deliveryPinSubtitle: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+  },
+  deliveryPinBadge: {
+    backgroundColor: '#004D40',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  deliveryPinDigits: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
   contactButton: {
     marginTop: SPACING.md,
