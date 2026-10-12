@@ -217,6 +217,12 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
     deliveryData?.order?.payment_status === 'cash_on_delivery' ||
     /cash|cod/i.test(deliveryData?.recipient_notes || '');
 
+  const artisanName =
+    route?.params?.artisanName ||
+    matchedOrder?.artisanName ||
+    deliveryData?.pickup_address?.name ||
+    'Malsha Maduwanthi';
+
   // Launch Google Maps GPS Turn-by-Turn Navigation to Buyer destination
   const handleNavigate = () => {
     const lat = dropoffLat;
@@ -249,6 +255,9 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
     if (navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.DELIVERY_FAILED, {
         trackingId,
+        buyerName,
+        artisanName,
+        jobId: route?.params?.jobId || deliveryData?.id,
       });
     }
   };
@@ -265,6 +274,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
   };
 
   const handleTabPress = (tabKey) => {
+    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {

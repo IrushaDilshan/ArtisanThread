@@ -125,10 +125,29 @@ export const FixAddressScreen = ({ navigation, route }) => {
   };
 
   const handleSendCorrection = () => {
+    if (isSent) {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else if (navigation?.navigate) {
+        navigation.navigate(ROUTES.COURIER.HOME);
+      }
+      return;
+    }
+
     setIsSent(true);
 
     // Save correction in courier service
-    courierService.updateCourierLocation(trackingId, 6.7732, 79.882).catch(() => {});
+    const extraNotes = landmarkText ? ` [Landmark: ${landmarkText}]` : '';
+    courierService
+      .updateDeliveryStatus(trackingId, deliveryData?.status || 'ARRIVED_AT_ARTISAN', {
+        current_lat: 6.7732,
+        current_lng: 79.882,
+        pickup_address: {
+          ...(deliveryData?.pickup_address || {}),
+          details: `${deliveryData?.pickup_address?.details || ''}${extraNotes}`,
+        },
+      })
+      .catch(() => {});
 
     Alert.alert(
       'Correction Sent! 🎉',
@@ -138,10 +157,25 @@ export const FixAddressScreen = ({ navigation, route }) => {
       [
         {
           text: 'Return to Pickup',
-          onPress: () => navigation?.goBack(),
+          onPress: () => {
+            if (navigation?.canGoBack && navigation.canGoBack()) {
+              navigation.goBack();
+            } else if (navigation?.navigate) {
+              navigation.navigate(ROUTES.COURIER.HOME);
+            }
+          },
         },
       ]
     );
+
+    // Auto navigate back after 1.5 seconds if alert is dismissed or unhandled
+    setTimeout(() => {
+      if (navigation?.canGoBack && navigation.canGoBack()) {
+        navigation.goBack();
+      } else if (navigation?.navigate) {
+        navigation.navigate(ROUTES.COURIER.HOME);
+      }
+    }, 1500);
   };
 
   const handleTabPress = (tabKey) => {
@@ -164,7 +198,13 @@ export const FixAddressScreen = ({ navigation, route }) => {
       <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <View style={styles.headerRow}>
           <TouchableOpacity
-            onPress={() => navigation?.goBack()}
+            onPress={() => {
+              if (navigation?.canGoBack && navigation.canGoBack()) {
+                navigation.goBack();
+              } else if (navigation?.navigate) {
+                navigation.navigate(ROUTES.COURIER.HOME);
+              }
+            }}
             activeOpacity={0.7}
             style={styles.backButton}
           >
@@ -174,7 +214,7 @@ export const FixAddressScreen = ({ navigation, route }) => {
           <View style={styles.headerSpacer} />
         </View>
         <Text style={styles.headerSubtitle}>
-          Tell the artisan what's wrong. They get it instantly.
+          {"Tell the artisan what's wrong. They get it instantly."}
         </Text>
       </View>
 
@@ -184,7 +224,7 @@ export const FixAddressScreen = ({ navigation, route }) => {
       >
         {/* 2. Problem Selection ("What's the problem?") */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionHeading}>What's the problem?</Text>
+          <Text style={styles.sectionHeading}>{"What's the problem?"}</Text>
           <View style={styles.problemGrid}>
             {problemOptions.map((opt) => {
               const isSelected = selectedProblem === opt;
@@ -376,7 +416,7 @@ export const FixAddressScreen = ({ navigation, route }) => {
           style={[styles.sendButton, isSent && styles.sendButtonSent]}
         >
           <Text style={styles.sendButtonText}>
-            {isSent ? 'Correction Sent ✓' : 'Send correction'}
+            {isSent ? 'Correction Sent ✓ · Tap to Return' : 'Send correction'}
           </Text>
         </TouchableOpacity>
       </ScrollView>

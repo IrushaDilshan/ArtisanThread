@@ -216,7 +216,9 @@ export const PickupRequestScreen = ({ navigation, route }) => {
 
   const handleFixAddress = () => {
     if (navigation?.navigate) {
-      navigation.navigate(ROUTES.COURIER.FIX_ADDRESS || 'FixAddressScreen');
+      navigation.navigate(ROUTES.COURIER.FIX_ADDRESS || 'FixAddressScreen', {
+        trackingId: initialTrackingId,
+      });
     }
   };
 
@@ -395,7 +397,7 @@ export const PickupRequestScreen = ({ navigation, route }) => {
             style={styles.fixAddressLinkWrapper}
           >
             <Text style={styles.fixAddressLinkText}>
-              Can't find this address?
+              {"Can't find this address?"}
             </Text>
           </TouchableOpacity>
 
