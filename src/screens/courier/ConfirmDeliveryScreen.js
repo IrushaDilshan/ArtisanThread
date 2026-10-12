@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Switch,
   Alert,
@@ -14,12 +13,12 @@ import {
   Image,
   Modal,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 import { courierService } from '../../services/courierService';
+import { orderService } from '../../services/orderService';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -133,25 +132,39 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('jobs');
   const [deliveryData, setDeliveryData] = useState(null);
+  const [matchedOrder, setMatchedOrder] = useState(null);
 
   const trackingId = route?.params?.trackingId || 'ATH-9942-PY';
 
   useEffect(() => {
     let isMounted = true;
-    courierService.verifyTrackingCode(trackingId).then((del) => {
-      if (isMounted && del) {
-        setDeliveryData(del);
+    (async () => {
+      try {
+        const [del, ord] = await Promise.all([
+          courierService.verifyTrackingCode(trackingId),
+          orderService.getOrderById(trackingId),
+        ]);
+        if (isMounted) {
+          if (del) setDeliveryData(del);
+          if (ord) setMatchedOrder(ord);
+          else if (del?.order_id) {
+            const byId = await orderService.getOrderById(del.order_id);
+            if (isMounted && byId) setMatchedOrder(byId);
+          }
+        }
+      } catch (err) {
+        console.warn('ConfirmDelivery data load error:', err);
       }
-    }).catch(() => {});
+    })();
     return () => { isMounted = false; };
   }, [trackingId]);
 
-  // Unified OTP state: '48' matches user screenshot initially
-  const [otp, setOtp] = useState('48');
+  // Unified OTP state: starts clean and empty, no fake data prefill
+  const [otp, setOtp] = useState('');
   const otpInputRef = useRef(null);
 
-  // Cash on delivery collected toggle
-  const [isCodCollected, setIsCodCollected] = useState(true);
+  // Cash on delivery collected toggle (defaults to false until cash is physically collected)
+  const [isCodCollected, setIsCodCollected] = useState(false);
 
   // Photo upload proof state
   const [photoUri, setPhotoUri] = useState(null);
@@ -233,91 +246,119 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
     setPhotoUri(null);
   };
 
-  // Signature drawing state (refs prevent closure drops and re-render glitches)
-  const strokesRef = useRef([]);
-  const currentStrokeRef = useRef([]);
-  const [renderCount, setRenderCount] = useState(0);
+  // Signature drawing state
+  const [strokes, setStrokes] = useState([]);
+  const [currentStroke, setCurrentStroke] = useState([]);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
   // Setup PanResponder with strictly captured touch gestures
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderTerminationRequest: () => false, // PREVENT ScrollView from stealing touch!
-      onShouldBlockAppResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        setScrollEnabled(false);
-        const { locationX, locationY } = evt.nativeEvent;
-        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
-        currentStrokeRef.current = [pt];
-        setRenderCount((c) => c + 1);
-      },
-      onPanResponderMove: (evt) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
-        const last = currentStrokeRef.current[currentStrokeRef.current.length - 1];
-        if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
-          currentStrokeRef.current.push(pt);
-          setRenderCount((c) => c + 1);
-        }
-      },
-      onPanResponderRelease: () => {
-        setScrollEnabled(true);
-        if (currentStrokeRef.current.length > 0) {
-          strokesRef.current.push([...currentStrokeRef.current]);
-          currentStrokeRef.current = [];
-          setRenderCount((c) => c + 1);
-        }
-      },
-      onPanResponderTerminate: () => {
-        setScrollEnabled(true);
-        if (currentStrokeRef.current.length > 0) {
-          strokesRef.current.push([...currentStrokeRef.current]);
-          currentStrokeRef.current = [];
-          setRenderCount((c) => c + 1);
-        }
-      },
-    })
-  ).current;
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false, // PREVENT ScrollView from stealing touch!
+        onShouldBlockAppResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          setScrollEnabled(false);
+          const { locationX, locationY } = evt.nativeEvent;
+          const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+          setCurrentStroke([pt]);
+        },
+        onPanResponderMove: (evt) => {
+          const { locationX, locationY } = evt.nativeEvent;
+          const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+          setCurrentStroke((prev) => {
+            const last = prev[prev.length - 1];
+            if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
+              return [...prev, pt];
+            }
+            return prev;
+          });
+        },
+        onPanResponderRelease: () => {
+          setScrollEnabled(true);
+          setCurrentStroke((prev) => {
+            if (prev.length > 0) {
+              setStrokes((all) => [...all, prev]);
+            }
+            return [];
+          });
+        },
+        onPanResponderTerminate: () => {
+          setScrollEnabled(true);
+          setCurrentStroke((prev) => {
+            if (prev.length > 0) {
+              setStrokes((all) => [...all, prev]);
+            }
+            return [];
+          });
+        },
+      }),
+    []
+  );
 
   const buyerName =
     route?.params?.buyerName ||
+    matchedOrder?.buyer ||
     deliveryData?.order?.buyer?.full_name ||
     deliveryData?.dropoff_address?.name ||
-    'Nimal Jayasuriya';
+    'Customer Delivery';
   const buyerInitials = buyerName
     .split(' ')
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .slice(0, 2)
-    .toUpperCase() || 'NJ';
+    .toUpperCase() || 'CD';
   const buyerAddress =
-    deliveryData?.dropoff_address?.address_line1
+    matchedOrder?.destination ||
+    (deliveryData?.dropoff_address?.address_line1
       ? `${deliveryData.dropoff_address.address_line1}, ${deliveryData.dropoff_address.city || ''}`
-      : '28/4 Galle Road, Colombo 03';
+      : 'Customer Delivery Address');
   const buyerPhone =
+    matchedOrder?.phone ||
     deliveryData?.order?.buyer?.phone ||
     deliveryData?.dropoff_address?.phone ||
-    '+94 77 456 7890';
+    '+94 77 123 4567';
   const totalAmount =
     route?.params?.totalAmount ||
-    (deliveryData?.order?.total_amount ? Number(deliveryData.order.total_amount) : 12500);
+    matchedOrder?.total_amount ||
+    matchedOrder?.rawPrice ||
+    (deliveryData?.order?.total_amount ? Number(deliveryData.order.total_amount) : 0);
 
-  const artisanName = deliveryData?.pickup_address?.name ? deliveryData.pickup_address.name.split(' ')[0] : 'Kumara';
+  const artisanName =
+    matchedOrder?.artisanName ||
+    deliveryData?.pickup_address?.name ||
+    'Artisan Workshop';
+
+  const isCod =
+    matchedOrder?.payment_status === 'cash_on_delivery' ||
+    matchedOrder?.payment_method === 'Cash on Delivery' ||
+    deliveryData?.order?.payment_status === 'cash_on_delivery' ||
+    /cash|cod/i.test(deliveryData?.recipient_notes || '');
 
   const recipient = {
     name: buyerName,
     initials: buyerInitials,
     address: buyerAddress,
-    phoneTag: buyerPhone ? `+94 *** ${buyerPhone.slice(-4)} verified` : '+94 *** 4567 verified',
-    codAmount: `LKR ${totalAmount.toLocaleString()}`,
+    phoneTag: buyerPhone ? `+94 *** ${String(buyerPhone).slice(-4)} verified` : '+94 *** 4567 verified',
+    codAmount: `LKR ${Number(totalAmount).toLocaleString('en-LK')}`,
   };
 
+  // Derive dynamic 4-digit expected delivery code
+  const rawCode =
+    deliveryData?.delivery_code ||
+    matchedOrder?.delivery_code ||
+    (trackingId ? String(trackingId).replace(/[^0-9]/g, '').slice(-4) : '') ||
+    '1234';
+  const displayExpectedCode =
+    rawCode.length >= 4 ? rawCode.slice(-4) : rawCode.padStart(4, '0');
+
   const handleAutofillOtp = () => {
-    setOtp('4820');
+    setOtp(displayExpectedCode);
     otpInputRef.current?.focus();
   };
 
@@ -327,20 +368,18 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   };
 
   const handleClearSignature = () => {
-    strokesRef.current = [];
-    currentStrokeRef.current = [];
-    setRenderCount((c) => c + 1);
+    setStrokes([]);
+    setCurrentStroke([]);
   };
 
   const handleSampleSignature = () => {
-    strokesRef.current = SAMPLE_SIGNATURE.map((s) => [...s]);
-    currentStrokeRef.current = [];
-    setRenderCount((c) => c + 1);
+    setStrokes(SAMPLE_SIGNATURE.map((s) => [...s]));
+    setCurrentStroke([]);
   };
 
-  const hasAnySignature = strokesRef.current.length > 0 || currentStrokeRef.current.length > 0;
+  const hasAnySignature = strokes.length > 0 || currentStroke.length > 0;
 
-  const handleMarkDelivered = () => {
+  const handleMarkDelivered = async () => {
     const isOtpFilled = otp.length === 4;
 
     // Validate delivery proof
@@ -354,30 +393,47 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
       return;
     }
 
-    // Update delivery status to DELIVERED in database / local state
-    courierService.updateDeliveryStatus(trackingId, 'DELIVERED', {
-      proof_photo_url: photoUri,
-    }).catch(() => {});
+    try {
+      // 1. Update delivery status to DELIVERED in database / local state
+      await courierService.updateDeliveryStatus(trackingId, 'DELIVERED', {
+        proof_photo_url: photoUri,
+        cod_collected: isCod ? isCodCollected : true,
+        total_amount: Number(totalAmount) || 0,
+      });
 
-    Alert.alert(
-      'Delivery Completed! 🎉',
-      `Order ${trackingId} for ${recipient.name} has been successfully delivered!\n\n${
-        isCodCollected ? `COD ${recipient.codAmount} collected.` : 'Payment confirmed.'
-      }`,
-      [
-        {
-          text: 'Rate Artisan',
-          onPress: () => navigation?.navigate?.(ROUTES.COURIER.RATINGS),
-        },
-        {
-          text: 'Back to Manifest',
-          onPress: () => navigation?.navigate?.(ROUTES.COURIER.HOME),
-        },
-      ]
-    );
+      // 2. Also ensure order is updated and escrow is released to artisan
+      const targetOrderId = matchedOrder?.id || deliveryData?.order_id || deliveryData?.order?.id;
+      if (targetOrderId) {
+        await orderService.updateOrderStatus(targetOrderId, 'DELIVERED');
+        await orderService.updatePaymentStatus(targetOrderId, 'released');
+      }
+
+      Alert.alert(
+        'Delivery Completed! 🎉',
+        `Order ${trackingId} for ${recipient.name} has been successfully delivered!\n\n${
+          isCod
+            ? (isCodCollected ? `COD ${recipient.codAmount} collected.` : 'COD pending collection.')
+            : `Escrow funds released to ${artisanName}!`
+        }`,
+        [
+          {
+            text: 'Rate Artisan',
+            onPress: () => navigation?.navigate?.(ROUTES.COURIER.RATINGS),
+          },
+          {
+            text: 'Back to Manifest',
+            onPress: () => navigation?.navigate?.(ROUTES.COURIER.HOME),
+          },
+        ]
+      );
+    } catch (_err) {
+      Alert.alert('Delivery Notice', 'Delivery marked completed.');
+      navigation?.navigate?.(ROUTES.COURIER.HOME);
+    }
   };
 
   const handleTabPress = (tabKey) => {
+    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
@@ -390,11 +446,11 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* 1. Header Section */}
-      <View style={[styles.headerContainer, Platform.OS === 'android' && { paddingTop: insets.top }]}>
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -486,7 +542,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
               activeOpacity={0.7}
               style={styles.otpChipBtn}
             >
-              <Text style={styles.otpChipText}>⚡ Read buyer code (4820)</Text>
+              <Text style={styles.otpChipText}>⚡ Read buyer code ({displayExpectedCode})</Text>
             </TouchableOpacity>
             {otp.length > 0 && (
               <TouchableOpacity
@@ -500,30 +556,59 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* 4. Cash on Delivery (COD) Switch Card */}
+        {/* 4. Payment Details (COD or Secure Escrow) */}
         <View style={styles.sectionBlock}>
-          <View style={styles.codHeaderRow}>
-            <Text style={styles.sectionTitle}>Cash on delivery</Text>
-            {isCodCollected && (
-              <Text style={styles.codStatusTag}>Collected</Text>
-            )}
-          </View>
+          {isCod ? (
+            <>
+              <View style={styles.codHeaderRow}>
+                <Text style={styles.sectionTitle}>Cash on delivery</Text>
+                {isCodCollected ? (
+                  <Text style={styles.codStatusTag}>Collected</Text>
+                ) : (
+                  <Text style={[styles.codStatusTag, { color: '#D97706' }]}>Pending collection</Text>
+                )}
+              </View>
 
-          <View style={styles.codCard}>
-            <View style={styles.codTextSide}>
-              <Text style={styles.codAmount}>{recipient.codAmount}</Text>
-              <Text style={styles.codSubtext}>Settles to {artisanName} within 24 hours</Text>
-            </View>
+              <View style={styles.codCard}>
+                <View style={styles.codTextSide}>
+                  <Text style={styles.codAmount}>{recipient.codAmount}</Text>
+                  <Text style={styles.codSubtext}>Collect cash from recipient · Settles to {artisanName} within 24 hours</Text>
+                </View>
 
-            {/* Active Green Toggle Switch */}
-            <Switch
-              value={isCodCollected}
-              onValueChange={setIsCodCollected}
-              trackColor={{ false: '#D1D5DB', true: '#10B981' }}
-              thumbColor="#FFFFFF"
-              ios_backgroundColor="#D1D5DB"
-            />
-          </View>
+                {/* Active Green Toggle Switch */}
+                <Switch
+                  value={isCodCollected}
+                  onValueChange={setIsCodCollected}
+                  trackColor={{ false: '#D1D5DB', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                  ios_backgroundColor="#D1D5DB"
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.codHeaderRow}>
+                <Text style={styles.sectionTitle}>Payment Details</Text>
+                <View style={styles.escrowPaidBadge}>
+                  <Text style={styles.escrowPaidBadgeText}>🛡️ Escrow Secured</Text>
+                </View>
+              </View>
+
+              <View style={[styles.codCard, styles.escrowCard]}>
+                <View style={styles.codTextSide}>
+                  <Text style={styles.codAmount}>{recipient.codAmount}</Text>
+                  <Text style={styles.codSubtext}>
+                    Funds held in Escrow · Auto-releases to {artisanName} upon delivery confirmation
+                  </Text>
+                </View>
+
+                <View style={styles.noCodCollectPill}>
+                  <Text style={styles.noCodCollectCheck}>✓ Paid</Text>
+                  <Text style={styles.noCodCollectText}>No cash to collect</Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         {/* 5. Photo Upload Proof Area ("Photo of the handover") */}
@@ -628,7 +713,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
             <View style={styles.signatureBaseline} pointerEvents="none" />
 
             {/* Render Finished Strokes */}
-            {strokesRef.current.map((stroke, idx) => (
+            {strokes.map((stroke, idx) => (
               <StrokeSegments
                 key={`stroke-${idx}`}
                 stroke={stroke}
@@ -637,9 +722,9 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
             ))}
 
             {/* Render Current Active Stroke in Real-time */}
-            {currentStrokeRef.current.length > 0 && (
+            {currentStroke.length > 0 && (
               <StrokeSegments
-                stroke={currentStrokeRef.current}
+                stroke={currentStroke}
                 strokeKey="current-stroke"
               />
             )}
@@ -816,11 +901,15 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           </View>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -830,7 +919,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
   backButton: {
@@ -1022,6 +1111,44 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#6B7280',
     marginTop: 2,
+  },
+  escrowPaidBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  escrowPaidBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  escrowCard: {
+    borderColor: '#D1FAE5',
+    backgroundColor: '#FAFAF9',
+  },
+  noCodCollectPill: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  noCodCollectCheck: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#047857',
+  },
+  noCodCollectText: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#065F46',
+    marginTop: 1,
   },
 
   // ----------------------------------------------------

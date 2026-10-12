@@ -1,4 +1,7 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase.js';
+import { safeStorage } from './storageHelper.js';
+
+const STORAGE_KEY = '@artisanthread_courier_deliveries_v2';
 
 export const DEFAULT_DEMO_DELIVERIES = [
   {
@@ -118,12 +121,124 @@ export const DEFAULT_DEMO_DELIVERIES = [
 ];
 
 let localDeliveriesState = [...DEFAULT_DEMO_DELIVERIES];
+let isLoaded = false;
+let _orderStatusListener = null;
+
+export const setOrderStatusListener = (listener) => {
+  _orderStatusListener = listener;
+};
+
+const loadDeliveries = async () => {
+  if (isLoaded) return localDeliveriesState;
+  try {
+    const raw = await safeStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        localDeliveriesState = parsed;
+      }
+    }
+  } catch (e) {
+    // Keep in-memory
+  }
+  isLoaded = true;
+  return localDeliveriesState;
+};
+
+const saveDeliveries = async (deliveries) => {
+  localDeliveriesState = deliveries;
+  try {
+    await safeStorage.setItem(STORAGE_KEY, JSON.stringify(deliveries));
+  } catch (e) {
+    // Keep in-memory
+  }
+};
+
+export const isDeliveryForCourier = (d, courierId, user = null) => {
+  if (!d) return false;
+
+  const currentId = courierId || user?.id;
+  const currentName = user?.name ? user.name.trim().toLowerCase() : null;
+  const currentPhone = user?.phone ? user.phone.replace(/[^0-9]/g, '') : null;
+
+  const dCourierId = d.courier_id || d.courierId;
+  const dCourierName = (d.courier_name || d.order?.assignedCourier || '').trim().toLowerCase();
+  const dCourierPhone = (d.courier_phone || '').replace(/[^0-9]/g, '');
+
+  // 1. Direct match on Courier ID (UUID or custom ID)
+  if (currentId && dCourierId && dCourierId === currentId) {
+    return true;
+  }
+
+  // 2. Direct match on Phone number
+  if (
+    currentPhone &&
+    dCourierPhone &&
+    currentPhone.length >= 7 &&
+    (currentPhone.endsWith(dCourierPhone) || dCourierPhone.endsWith(currentPhone))
+  ) {
+    return true;
+  }
+
+  // 3. Direct match on Courier Name
+  if (
+    currentName &&
+    dCourierName &&
+    (currentName === dCourierName ||
+      currentName.includes(dCourierName) ||
+      dCourierName.includes(currentName))
+  ) {
+    return true;
+  }
+
+  // 4. If assigned specifically to a DIFFERENT courier, DO NOT show to current courier
+  const isAssignedToOther =
+    (dCourierId &&
+      currentId &&
+      dCourierId !== currentId &&
+      dCourierId !== 'usr_courier_01' &&
+      dCourierId !== 'courier-demo') ||
+    (dCourierName &&
+      currentName &&
+      dCourierName !== currentName &&
+      dCourierName !== 'marcus vance' &&
+      dCourierName !== 'unassigned');
+
+  if (isAssignedToOther) {
+    return false;
+  }
+
+  // 5. Default/Demo unassigned deliveries without a specific owner are viewable
+  if (!dCourierId || dCourierId === 'courier-demo' || dCourierId === 'usr_courier_01') {
+    return true;
+  }
+
+  return false;
+};
 
 export const courierService = {
   /**
-   * Fetch active deliveries assigned to a courier with automatic fallback to active demo deliveries
+   * Fetch active deliveries assigned strictly to a specific courier with fallback
    */
-  async getAssignedDeliveries(courierId = null) {
+  async getAssignedDeliveries(courierId = null, user = null) {
+    await loadDeliveries();
+
+    const results = [];
+
+    // Resolve real Supabase courier UUID for known profiles
+    const effectiveCourierId =
+      courierId && courierId.length === 36
+        ? courierId
+        : user?.id && user.id.length === 36
+          ? user.id
+          : user?.name?.toLowerCase() === 'irusha' || user?.phone === '0777777777'
+            ? '5de2dd7b-8e12-4901-8979-7f5520dc2a31'
+            : user?.name?.toLowerCase() === 'kasun' || user?.phone === '0999999999'
+              ? 'c91d74af-47f7-4d01-888a-cfbb1e9b9eec'
+              : user?.name?.toLowerCase() === 'ruwan' || user?.phone === '0766666666'
+                ? '8b112de3-193c-40d0-b7ba-2adfd02748bb'
+                : null;
+
     if (isSupabaseConfigured) {
       try {
         const baseSelect = `
@@ -134,50 +249,206 @@ export const courierService = {
           )
         `;
 
-        // 1. If courierId provided, first search for deliveries specifically assigned to this courier in Supabase
-        if (courierId) {
+        if (effectiveCourierId) {
           const { data: userDeliveries, error: userError } = await supabase
             .from('deliveries')
             .select(baseSelect)
-            .eq('courier_id', courierId)
-            .neq('status', 'DELIVERED')
-            .order('created_at', { ascending: true });
+            .eq('courier_id', effectiveCourierId)
+            .order('created_at', { ascending: false });
 
           if (!userError && userDeliveries && userDeliveries.length > 0) {
-            return userDeliveries;
+            for (const d of userDeliveries) {
+              results.push(d);
+            }
           }
         }
 
-        // 2. Fallback: If no deliveries assigned to this courier yet,
-        // fetch any active database deliveries (e.g. from seed.sql or unassigned)
-        const { data: allActive, error: allError } = await supabase
+        // Also fetch general deliveries and filter to ensure no missed cloud deliveries
+        const { data: allDels } = await supabase
           .from('deliveries')
           .select(baseSelect)
-          .neq('status', 'DELIVERED')
-          .order('created_at', { ascending: true })
-          .limit(10);
+          .order('created_at', { ascending: false });
 
-        if (!allError && allActive && allActive.length > 0) {
-          return allActive;
+        if (allDels && allDels.length > 0) {
+          for (const d of allDels) {
+            if (isDeliveryForCourier(d, effectiveCourierId || courierId, user)) {
+              if (
+                !results.some(
+                  (r) =>
+                    r.id === d.id ||
+                    (r.tracking_code && r.tracking_code === d.tracking_code)
+                )
+              ) {
+                results.push(d);
+              }
+            }
+          }
         }
       } catch (err) {
         console.warn('Supabase deliveries fetch notice:', err.message);
       }
     }
 
-    // 3. Fallback when Supabase deliveries table is empty (e.g. teammate hasn't added orders yet)
-    // Ensures courier development and testing can proceed seamlessly right away!
-    return localDeliveriesState;
+    // Filter local deliveries specifically for this courier
+    for (const local of localDeliveriesState) {
+      if (isDeliveryForCourier(local, effectiveCourierId || courierId, user)) {
+        if (
+          !results.some(
+            (d) =>
+              d.id === local.id ||
+              (d.tracking_code && d.tracking_code === local.tracking_code)
+          )
+        ) {
+          results.push(local);
+        }
+      }
+    }
+
+    return results;
+  },
+
+  /**
+   * Create a new delivery job for courier when artisan assigns an order
+   */
+  async createDeliveryFromOrder(order, courierInfo = {}) {
+    await loadDeliveries();
+
+    const trackingCode =
+      order.tracking_code ||
+      `ATH-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString().slice(-2)}`;
+
+    const totalAmount = order.rawPrice || order.total_amount || 0;
+    const isCod =
+      order.payment_status === 'cash_on_delivery' ||
+      order.payment_method === 'Cash on Delivery';
+
+    // Resolve courier UUID
+    const courierUuid =
+      courierInfo.id && courierInfo.id.length === 36
+        ? courierInfo.id
+        : courierInfo.name?.toLowerCase() === 'irusha' || courierInfo.phone === '0777777777'
+          ? '5de2dd7b-8e12-4901-8979-7f5520dc2a31'
+          : courierInfo.name?.toLowerCase() === 'kasun' || courierInfo.phone === '0999999999'
+            ? 'c91d74af-47f7-4d01-888a-cfbb1e9b9eec'
+            : courierInfo.name?.toLowerCase() === 'ruwan' || courierInfo.phone === '0766666666'
+              ? '8b112de3-193c-40d0-b7ba-2adfd02748bb'
+              : courierInfo.id || 'usr_courier_01';
+
+    const newDelivery = {
+      id: `del-${order.id || Date.now()}`,
+      order_id: order.db_id || order.id,
+      courier_id: courierUuid,
+      courier_name: courierInfo.name || courierInfo.full_name || 'Marcus Vance',
+      courier_phone: courierInfo.phone || '',
+      tracking_code: trackingCode,
+      status: 'ASSIGNED',
+      total_amount: totalAmount,
+      pickup_address: {
+        name: order.artisanName || 'Takahashi Handloom & Indigo Studio',
+        address_line1: '142 Temple Road',
+        city: 'Kandy',
+        phone: '+94 81 223 4567',
+        details: `${order.item || '1 craft parcel'} · Packaging Ready`,
+      },
+      dropoff_address: {
+        name: order.buyer || 'Customer Delivery',
+        address_line1: order.destination || '42 Ward Place, Colombo 07',
+        city: order.destination?.split(',')?.pop()?.trim() || 'Colombo 07',
+        phone: order.phone || '+94 77 123 4567',
+        details: `Order #${order.id} · ${order.item || ''}`,
+      },
+      pickup_lat: 7.2906,
+      pickup_lng: 80.6337,
+      dropoff_lat: 6.9271,
+      dropoff_lng: 79.8612,
+      recipient_notes:
+        order.notes ||
+        (isCod
+          ? `COD: LKR ${Number(totalAmount).toLocaleString('en-LK')}`
+          : 'Escrow Held. Fragile handcrafted piece - Handle with care'),
+      order: {
+        id: order.id,
+        order_number: order.order_number || order.id,
+        total_amount: totalAmount,
+        status: 'PROCESSING',
+        payment_status: isCod ? 'cash_on_delivery' : 'held',
+        buyer: {
+          full_name: order.buyer,
+          phone: order.phone,
+        },
+      },
+      created_at: new Date().toISOString(),
+    };
+
+    // Prepend to active deliveries list
+    const updated = [newDelivery, ...localDeliveriesState.filter(d => d.id !== newDelivery.id && d.tracking_code !== trackingCode)];
+    await saveDeliveries(updated);
+
+    // If Supabase is connected, insert/upsert into Cloud Deliveries table
+    if (isSupabaseConfigured) {
+      try {
+        let orderUuid = order.db_id && order.db_id.length === 36 ? order.db_id : null;
+
+        // Try to insert order into public.orders if not exists
+        if (!orderUuid) {
+          const { data: dbOrder } = await supabase
+            .from('orders')
+            .insert([
+              {
+                order_number: order.order_number || order.id,
+                status: 'SHIPPED',
+                total_amount: totalAmount,
+                shipping_address: { address: order.destination || 'Colombo' },
+                payment_status: isCod ? 'cash_on_delivery' : 'paid',
+              },
+            ])
+            .select()
+            .single();
+
+          if (dbOrder?.id) orderUuid = dbOrder.id;
+        }
+
+        const deliveryRecord = {
+          tracking_code: trackingCode,
+          order_id: orderUuid || '20000000-0000-0000-0000-000000000001',
+          courier_id: courierUuid && courierUuid.length === 36 ? courierUuid : null,
+          status: 'ASSIGNED',
+          pickup_address: newDelivery.pickup_address,
+          dropoff_address: newDelivery.dropoff_address,
+          recipient_notes: newDelivery.recipient_notes,
+        };
+
+        const { data: savedDel, error: delErr } = await supabase
+          .from('deliveries')
+          .upsert([deliveryRecord], { onConflict: 'tracking_code' })
+          .select()
+          .single();
+
+        if (savedDel?.id) {
+          newDelivery.id = savedDel.id;
+          newDelivery.db_id = savedDel.id;
+        }
+        if (delErr) {
+          console.warn('Supabase delivery insert note:', delErr.message);
+        }
+      } catch (e) {
+        console.warn('Supabase delivery insert notice:', e.message);
+      }
+    }
+
+    return newDelivery;
   },
 
   /**
    * One-click claim/assign all seed or unassigned deliveries in database to the logged-in courier
    */
   async assignDemoDeliveriesToCourier(courierId) {
+    await loadDeliveries();
     localDeliveriesState = localDeliveriesState.map((d) => ({
       ...d,
       courier_id: courierId || 'courier-demo',
     }));
+    await saveDeliveries(localDeliveriesState);
 
     if (isSupabaseConfigured && courierId) {
       try {
@@ -202,6 +473,8 @@ export const courierService = {
    * Verify parcel tracking code on scan
    */
   async verifyTrackingCode(trackingCode) {
+    await loadDeliveries();
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -263,6 +536,8 @@ export const courierService = {
    * Mark delivery as picked up or completed
    */
   async updateDeliveryStatus(deliveryId, status, extraFields = {}) {
+    await loadDeliveries();
+
     const updatePayload = {
       status,
       updated_at: new Date().toISOString(),
@@ -275,10 +550,64 @@ export const courierService = {
       updatePayload.delivered_at = new Date().toISOString();
     }
 
-    // Update in-memory local state
-    localDeliveriesState = localDeliveriesState.map((d) =>
-      d.id === deliveryId ? { ...d, ...updatePayload } : d
+    const targetDelivery = localDeliveriesState.find(
+      (d) =>
+        d.id === deliveryId ||
+        d.tracking_code === deliveryId ||
+        (d.tracking_code && String(d.tracking_code).toUpperCase() === String(deliveryId).toUpperCase()) ||
+        d.order_id === deliveryId ||
+        d.order?.id === deliveryId
     );
+
+    const updated = localDeliveriesState.map((d) => {
+      const isMatch =
+        d.id === deliveryId ||
+        d.tracking_code === deliveryId ||
+        (d.tracking_code && String(d.tracking_code).toUpperCase() === String(deliveryId).toUpperCase()) ||
+        d.order_id === deliveryId ||
+        d.order?.id === deliveryId;
+
+      if (!isMatch) return d;
+
+      const totalAmt =
+        extraFields.total_amount ||
+        d.total_amount ||
+        d.order?.total_amount ||
+        d.order?.rawPrice;
+
+      return {
+        ...d,
+        ...updatePayload,
+        total_amount: totalAmt,
+        order: d.order
+          ? {
+              ...d.order,
+              status: status === 'DELIVERED' ? 'DELIVERED' : d.order.status,
+              total_amount: totalAmt,
+            }
+          : d.order,
+      };
+    });
+    await saveDeliveries(updated);
+
+    if (_orderStatusListener) {
+      const orderId =
+        targetDelivery?.order_id ||
+        targetDelivery?.order?.id ||
+        targetDelivery?.tracking_code ||
+        deliveryId;
+      if (orderId) {
+        if (status === 'PICKED_UP' || status === 'IN_TRANSIT') {
+          _orderStatusListener(orderId, 'IN_TRANSIT');
+        } else if (status === 'DELIVERED') {
+          _orderStatusListener(orderId, 'DELIVERED');
+        } else if (status === 'RESCHEDULED') {
+          _orderStatusListener(orderId, 'RESCHEDULED');
+        } else if (status === 'RETURNED') {
+          _orderStatusListener(orderId, 'RETURNED');
+        }
+      }
+    }
 
     if (isSupabaseConfigured) {
       try {
@@ -298,4 +627,3 @@ export const courierService = {
     return { id: deliveryId, ...updatePayload };
   },
 };
-

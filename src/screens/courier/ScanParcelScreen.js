@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Alert,
   Modal,
@@ -43,7 +42,7 @@ export const ScanParcelScreen = ({ navigation, route }) => {
   const isScanningLocked = useRef(false);
 
   // Animated Scanning Laser Line
-  const laserAnim = useRef(new Animated.Value(0)).current;
+  const [laserAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -235,11 +234,11 @@ export const ScanParcelScreen = ({ navigation, route }) => {
   const isCameraReady = Boolean(permission?.granted);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="#122421" />
 
       {/* 1. Header Section */}
-      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top, 8) }]}>
+      <View style={[styles.headerContainer, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -464,11 +463,15 @@ export const ScanParcelScreen = ({ navigation, route }) => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#122421',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#122421',

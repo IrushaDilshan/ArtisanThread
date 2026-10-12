@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   RefreshControl,
   ActivityIndicator,
@@ -16,7 +15,7 @@ import { COLORS } from '../../constants/colors';
 import { ROUTES } from '../../navigation/routes';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
-import { courierService, isSupabaseConfigured } from '../../services';
+import { courierService, orderService } from '../../services';
 
 // Vector Icon Helpers for Bottom Tab Bar
 const TabIcon = ({ name, active }) => {
@@ -81,30 +80,141 @@ export const CourierHomeScreen = ({ navigation }) => {
 
   const loadCourierJobs = useCallback(async () => {
     try {
-      const data = await courierService.getAssignedDeliveries(user?.id);
+      const [data, artisanOrders] = await Promise.all([
+        courierService.getAssignedDeliveries(user?.id, user),
+        orderService.getArtisanOrders().catch(() => []),
+      ]);
+
       if (data && data.length > 0) {
         const mapped = data.map((d) => {
-          const isPickup = d.status === 'ASSIGNED' || d.status === 'ARRIVED_AT_ARTISAN';
+          const isDelivered = d.status === 'DELIVERED';
+          const isRescheduled = d.status === 'RESCHEDULED';
+          const isReturned = d.status === 'RETURNED';
+          const isPickup =
+            (d.status === 'ASSIGNED' || d.status === 'ARRIVED_AT_ARTISAN') &&
+            !isDelivered &&
+            !isRescheduled &&
+            !isReturned;
           const pickupName = d.pickup_address?.name || 'Artisan Workshop';
           const dropoffName = d.dropoff_address?.name || d.order?.buyer?.full_name || 'Customer Delivery';
           const cityName = isPickup ? (d.pickup_address?.city || 'Local') : (d.dropoff_address?.city || 'Local');
-          const totalAmount = d.order?.total_amount ? Number(d.order.total_amount) : 0;
-          const isCod = d.order?.payment_status === 'cash_on_delivery' || Boolean(d.recipient_notes?.includes('COD'));
+
+          // Match order to retrieve accurate price / totals
+          const matchedOrd = (artisanOrders || []).find(
+            (o) =>
+              (o.id && (o.id === d.order_id || o.id === d.order?.id)) ||
+              (o.tracking_code && (o.tracking_code === d.tracking_code || o.tracking_code === d.id)) ||
+              (o.order_number && (o.order_number === d.tracking_code || o.order_number === d.order?.order_number))
+          );
+
+          let totalAmount = 0;
+          if (d.total_amount) {
+            totalAmount = Number(d.total_amount);
+          } else if (d.order?.total_amount) {
+            totalAmount = Number(d.order.total_amount);
+          } else if (matchedOrd?.total_amount || matchedOrd?.rawPrice) {
+            totalAmount = Number(matchedOrd.total_amount || matchedOrd.rawPrice);
+          } else if (d.recipient_notes) {
+            const match =
+              d.recipient_notes.match(/(?:COD|LKR|Rs\.?)\s*:?\s*LKR\s*([\d,]+)/i) ||
+              d.recipient_notes.match(/LKR\s*([\d,]+)/i) ||
+              d.recipient_notes.match(/Rs\.?\s*([\d,]+)/i);
+            if (match) {
+              totalAmount = Number(match[1].replace(/,/g, ''));
+            }
+          }
+
+          const isCod =
+            d.order?.payment_status === 'cash_on_delivery' ||
+            matchedOrd?.payment_status === 'cash_on_delivery' ||
+            matchedOrd?.payment_method === 'Cash on Delivery' ||
+            Boolean(d.recipient_notes?.includes('COD'));
+
+          // Courier Collections: include COD jobs AND all delivered completed jobs
+          const codAmount = (isCod || isDelivered) ? totalAmount : 0;
+
+          let borderHighlight = '#10B981';
+          if (isDelivered) {
+            borderHighlight = '#10B981';
+          } else if (isRescheduled) {
+            borderHighlight = '#F59E0B';
+          } else if (isReturned) {
+            borderHighlight = '#EF4444';
+          } else if (isPickup) {
+            borderHighlight = '#F59E0B';
+          }
+
+          let statusBadgeBg = '#D1FAE5';
+          let statusBadgeText = '#065F46';
+          if (isDelivered) {
+            statusBadgeBg = '#D1FAE5';
+            statusBadgeText = '#065F46';
+          } else if (isRescheduled) {
+            statusBadgeBg = '#FEF3C7';
+            statusBadgeText = '#B45309';
+          } else if (isReturned) {
+            statusBadgeBg = '#FEE2E2';
+            statusBadgeText = '#B91C1C';
+          } else if (isPickup) {
+            statusBadgeBg = '#FEF3C7';
+            statusBadgeText = '#92400E';
+          }
+
+          const timeBadge = isRescheduled
+            ? (d.rescheduled_time || 'Tomorrow am')
+            : null;
+          const timeBadgeBg = '#EFF6FF';
+          const timeBadgeText = '#1D4ED8';
+
+          let detailsText =
+            d.pickup_address?.details ||
+            d.dropoff_address?.details ||
+            `Tracking: ${d.tracking_code}`;
+          if (isRescheduled) {
+            const reasonStr = d.reschedule_reason ? ` · ${d.reschedule_reason}` : '';
+            detailsText = `Rescheduled for ${d.rescheduled_time || 'Tomorrow am'}${reasonStr}`;
+          } else if (isReturned) {
+            detailsText = `Returned · ${d.return_reason || 'Return initiated'}`;
+          }
+
+          let actionLabel = null;
+          let actionColor = '#00796B';
+          if (isDelivered) {
+            actionLabel = null;
+          } else if (isRescheduled) {
+            actionLabel = 'Re-attempt';
+            actionColor = '#D97706';
+          } else if (isReturned) {
+            actionLabel = null;
+          } else if (isPickup) {
+            actionLabel = 'Start';
+            actionColor = '#00796B';
+          } else {
+            actionLabel = 'Continue';
+            actionColor = '#00796B';
+          }
 
           return {
             id: d.id,
             type: isPickup ? 'pickup' : 'delivery',
-            borderHighlight: isPickup ? '#F59E0B' : '#10B981',
+            borderHighlight,
             name: isPickup ? pickupName : dropoffName,
             subtitle: `${isPickup ? 'Pickup' : 'Delivery'} · ${cityName}`,
-            details: d.pickup_address?.details || d.dropoff_address?.details || `Tracking: ${d.tracking_code}`,
+            details: detailsText,
             statusBadge: d.status.replace(/_/g, ' ').toUpperCase(),
-            statusBadgeBg: isPickup ? '#FEF3C7' : '#D1FAE5',
-            statusBadgeText: isPickup ? '#92400E' : '#065F46',
-            actionLabel: isPickup ? 'Start' : 'Continue',
-            actionColor: '#00796B',
+            statusBadgeBg,
+            statusBadgeText,
+            timeBadge,
+            timeBadgeBg,
+            timeBadgeText,
+            isDelivered,
+            isRescheduled,
+            isReturned,
+            actionLabel,
+            actionColor,
             isFragile: Boolean(d.recipient_notes?.toLowerCase().includes('fragile')),
-            codAmount: isCod ? totalAmount : 0,
+            codAmount,
+            totalAmount,
             trackingId: d.tracking_code,
           };
         });
@@ -119,7 +229,7 @@ export const CourierHomeScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   // Re-fetch live whenever screen gains focus and reset active tab to 'jobs'
   useFocusEffect(
@@ -152,7 +262,9 @@ export const CourierHomeScreen = ({ navigation }) => {
 
   // Strictly real data from database (no mock fallback)
   const activeJobs = dbJobs;
-  const pickupsCount = activeJobs.filter((j) => j.type === 'pickup').length;
+  const pickupsCount = activeJobs.filter(
+    (j) => j.type === 'pickup' && !j.isDelivered && !j.isRescheduled && !j.isReturned
+  ).length;
   const deliveriesCount = activeJobs.filter((j) => j.type === 'delivery').length;
   const totalCod = activeJobs.reduce((sum, j) => sum + (j.codAmount || 0), 0);
 
@@ -216,10 +328,14 @@ export const CourierHomeScreen = ({ navigation }) => {
               </Text>
             </View>
 
-            {/* Avatar Badge */}
-            <View style={styles.avatarBadge}>
+            {/* Avatar Badge (Tapping navigates to Courier Profile) */}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate(ROUTES.COURIER.PROFILE)}
+              style={styles.avatarBadge}
+            >
               <Text style={styles.avatarText}>{avatarInitials}</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {/* 3 Horizontal Stats Cards inside Header */}
@@ -258,14 +374,14 @@ export const CourierHomeScreen = ({ navigation }) => {
               >
                 Rs. {totalCod > 0 ? totalCod.toLocaleString() : '0'}
               </Text>
-              <Text style={styles.statLabel} numberOfLines={1}>COD to collect</Text>
+              <Text style={styles.statLabel} numberOfLines={1}>COD Collection</Text>
             </View>
           </View>
         </View>
 
         {/* "Today's jobs" Section Header */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Today's jobs</Text>
+          <Text style={styles.sectionTitle}>{"Today's jobs"}</Text>
           <TouchableOpacity
             onPress={() => navigation?.navigate?.(ROUTES.COURIER.ROUTES)}
             activeOpacity={0.7}
@@ -390,7 +506,24 @@ export const CourierHomeScreen = ({ navigation }) => {
                       )}
                     </View>
 
-                    {job.actionLabel && (
+                    {job.isDelivered ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert(
+                            'Delivery Completed 🎉',
+                            `Order ${job.trackingId || job.id} for ${job.name} has been successfully delivered and confirmed!`
+                          );
+                        }}
+                        activeOpacity={0.8}
+                        style={styles.deliveredPill}
+                      >
+                        <Text style={styles.deliveredPillText}>✓ Delivered</Text>
+                      </TouchableOpacity>
+                    ) : job.isReturned ? (
+                      <View style={styles.returnedPill}>
+                        <Text style={styles.returnedPillText}>↩ Returned</Text>
+                      </View>
+                    ) : job.actionLabel ? (
                       <TouchableOpacity
                         onPress={() => {
                           if (job.type === 'pickup' && navigation?.navigate) {
@@ -406,7 +539,10 @@ export const CourierHomeScreen = ({ navigation }) => {
                           }
                         }}
                         activeOpacity={0.7}
-                        style={styles.actionBtn}
+                        style={[
+                          styles.actionBtn,
+                          job.isRescheduled && styles.reattemptBtn,
+                        ]}
                       >
                         <Text
                           style={[
@@ -417,20 +553,13 @@ export const CourierHomeScreen = ({ navigation }) => {
                           {job.actionLabel}
                         </Text>
                       </TouchableOpacity>
-                    )}
+                    ) : null}
                   </View>
                 </View>
               </View>
             ))
           )}
         </View>
-
-        {/* Bottom Status Message */}
-        <Text style={styles.statusFooterMessage}>
-          {activeJobs.length > 0
-            ? `Live connected to Supabase (${activeJobs.length} active jobs)`
-            : 'Connected to Supabase. No active deliveries pending.'}
-        </Text>
       </ScrollView>
 
       {/* Bottom Navigation Bar */}
@@ -734,6 +863,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  deliveredPill: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deliveredPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  reattemptBtn: {
+    backgroundColor: '#FEF3C7',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  returnedPill: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  returnedPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991B1B',
+  },
 
   // ----------------------------------------------------
   // Bottom Status Footer Message & Empty State
@@ -775,13 +944,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
-  },
-  statusFooterMessage: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 12,
   },
 
   // ----------------------------------------------------
