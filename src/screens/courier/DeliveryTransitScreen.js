@@ -424,7 +424,7 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
             style={styles.cantCompleteLinkWrapper}
           >
             <Text style={styles.cantCompleteLinkText}>
-              Can't complete this delivery
+              {"Can't complete this delivery"}
             </Text>
           </TouchableOpacity>
 

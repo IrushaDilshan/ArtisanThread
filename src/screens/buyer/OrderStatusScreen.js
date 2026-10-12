@@ -262,6 +262,18 @@ export const OrderStatusScreen = ({ navigation, route }) => {
   const orderNumber =
     activeOrder.order_number || activeOrder.orderNumber || activeOrder.id || '0xT23456';
   const orderId = activeOrder.id;
+
+  const trackingNumber =
+    activeOrder.tracking_code ||
+    activeOrder.order_number ||
+    orderId;
+  const buyerPinRaw =
+    activeOrder.delivery_code ||
+    (trackingNumber ? String(trackingNumber).replace(/[^0-9]/g, '').slice(-4) : '') ||
+    '1234';
+  const displayBuyerPin =
+    buyerPinRaw.length >= 4 ? buyerPinRaw.slice(-4) : buyerPinRaw.padStart(4, '0');
+
   const canCancelOrder = isCancellable(currentStatus);
   const activeStepIndex = ORDER_STEPS.findIndex(
     (step) => step.status === currentStatus
@@ -534,6 +546,26 @@ export const OrderStatusScreen = ({ navigation, route }) => {
             </Text>
           </View>
         </Card>
+
+        {/* 4-Digit Buyer Delivery Handover PIN */}
+        {(currentStatus === 'COURIER_ASSIGNED' || currentStatus === 'IN_TRANSIT' || currentStatus === 'READY_FOR_PICKUP' || currentStatus === 'DELIVERED') && (
+          <Card style={styles.deliveryPinCard}>
+            <View style={styles.deliveryPinRow}>
+              <View style={styles.deliveryPinIconBox}>
+                <Text style={styles.deliveryPinIcon}>🔐</Text>
+              </View>
+              <View style={styles.deliveryPinTextSide}>
+                <Text style={styles.deliveryPinTitle}>Delivery Handover PIN</Text>
+                <Text style={styles.deliveryPinSubtitle}>
+                  Read this 4-digit verification code to the courier to confirm delivery
+                </Text>
+              </View>
+              <View style={styles.deliveryPinBadge}>
+                <Text style={styles.deliveryPinDigits}>{displayBuyerPin}</Text>
+              </View>
+            </View>
+          </Card>
+        )}
 
         <Card style={styles.timelineCard}>
           <Text style={styles.sectionTitle}>Order Timeline</Text>
@@ -961,6 +993,55 @@ const styles = StyleSheet.create({
   confirmCancelButton: {
     alignSelf: 'stretch',
     marginTop: SPACING.sm,
+  },
+  deliveryPinCard: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+    borderWidth: 1.5,
+  },
+  deliveryPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  deliveryPinIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  deliveryPinIcon: {
+    fontSize: 20,
+  },
+  deliveryPinTextSide: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  deliveryPinTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065F46',
+  },
+  deliveryPinSubtitle: {
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 2,
+  },
+  deliveryPinBadge: {
+    backgroundColor: '#004D40',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  deliveryPinDigits: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
 });
 

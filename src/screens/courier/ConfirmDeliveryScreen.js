@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
   Image,
   Modal,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -247,55 +246,59 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
     setPhotoUri(null);
   };
 
-  // Signature drawing state (refs prevent closure drops and re-render glitches)
-  const strokesRef = useRef([]);
-  const currentStrokeRef = useRef([]);
-  const [renderCount, setRenderCount] = useState(0);
+  // Signature drawing state
+  const [strokes, setStrokes] = useState([]);
+  const [currentStroke, setCurrentStroke] = useState([]);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
   // Setup PanResponder with strictly captured touch gestures
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderTerminationRequest: () => false, // PREVENT ScrollView from stealing touch!
-      onShouldBlockAppResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        setScrollEnabled(false);
-        const { locationX, locationY } = evt.nativeEvent;
-        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
-        currentStrokeRef.current = [pt];
-        setRenderCount((c) => c + 1);
-      },
-      onPanResponderMove: (evt) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        const pt = { x: Math.round(locationX), y: Math.round(locationY) };
-        const last = currentStrokeRef.current[currentStrokeRef.current.length - 1];
-        if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
-          currentStrokeRef.current.push(pt);
-          setRenderCount((c) => c + 1);
-        }
-      },
-      onPanResponderRelease: () => {
-        setScrollEnabled(true);
-        if (currentStrokeRef.current.length > 0) {
-          strokesRef.current.push([...currentStrokeRef.current]);
-          currentStrokeRef.current = [];
-          setRenderCount((c) => c + 1);
-        }
-      },
-      onPanResponderTerminate: () => {
-        setScrollEnabled(true);
-        if (currentStrokeRef.current.length > 0) {
-          strokesRef.current.push([...currentStrokeRef.current]);
-          currentStrokeRef.current = [];
-          setRenderCount((c) => c + 1);
-        }
-      },
-    })
-  ).current;
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onPanResponderTerminationRequest: () => false, // PREVENT ScrollView from stealing touch!
+        onShouldBlockAppResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          setScrollEnabled(false);
+          const { locationX, locationY } = evt.nativeEvent;
+          const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+          setCurrentStroke([pt]);
+        },
+        onPanResponderMove: (evt) => {
+          const { locationX, locationY } = evt.nativeEvent;
+          const pt = { x: Math.round(locationX), y: Math.round(locationY) };
+          setCurrentStroke((prev) => {
+            const last = prev[prev.length - 1];
+            if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
+              return [...prev, pt];
+            }
+            return prev;
+          });
+        },
+        onPanResponderRelease: () => {
+          setScrollEnabled(true);
+          setCurrentStroke((prev) => {
+            if (prev.length > 0) {
+              setStrokes((all) => [...all, prev]);
+            }
+            return [];
+          });
+        },
+        onPanResponderTerminate: () => {
+          setScrollEnabled(true);
+          setCurrentStroke((prev) => {
+            if (prev.length > 0) {
+              setStrokes((all) => [...all, prev]);
+            }
+            return [];
+          });
+        },
+      }),
+    []
+  );
 
   const buyerName =
     route?.params?.buyerName ||
@@ -365,18 +368,16 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
   };
 
   const handleClearSignature = () => {
-    strokesRef.current = [];
-    currentStrokeRef.current = [];
-    setRenderCount((c) => c + 1);
+    setStrokes([]);
+    setCurrentStroke([]);
   };
 
   const handleSampleSignature = () => {
-    strokesRef.current = SAMPLE_SIGNATURE.map((s) => [...s]);
-    currentStrokeRef.current = [];
-    setRenderCount((c) => c + 1);
+    setStrokes(SAMPLE_SIGNATURE.map((s) => [...s]));
+    setCurrentStroke([]);
   };
 
-  const hasAnySignature = strokesRef.current.length > 0 || currentStrokeRef.current.length > 0;
+  const hasAnySignature = strokes.length > 0 || currentStroke.length > 0;
 
   const handleMarkDelivered = async () => {
     const isOtpFilled = otp.length === 4;
@@ -423,13 +424,14 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
           },
         ]
       );
-    } catch (err) {
+    } catch (_err) {
       Alert.alert('Delivery Notice', 'Delivery marked completed.');
       navigation?.navigate?.(ROUTES.COURIER.HOME);
     }
   };
 
   const handleTabPress = (tabKey) => {
+    setActiveTab(tabKey);
     if (tabKey === 'jobs' && navigation?.navigate) {
       navigation.navigate(ROUTES.COURIER.HOME);
     } else if (tabKey === 'route' && navigation?.navigate) {
@@ -709,7 +711,7 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
             <View style={styles.signatureBaseline} pointerEvents="none" />
 
             {/* Render Finished Strokes */}
-            {strokesRef.current.map((stroke, idx) => (
+            {strokes.map((stroke, idx) => (
               <StrokeSegments
                 key={`stroke-${idx}`}
                 stroke={stroke}
@@ -718,9 +720,9 @@ export const ConfirmDeliveryScreen = ({ navigation, route }) => {
             ))}
 
             {/* Render Current Active Stroke in Real-time */}
-            {currentStrokeRef.current.length > 0 && (
+            {currentStroke.length > 0 && (
               <StrokeSegments
-                stroke={currentStrokeRef.current}
+                stroke={currentStroke}
                 strokeKey="current-stroke"
               />
             )}

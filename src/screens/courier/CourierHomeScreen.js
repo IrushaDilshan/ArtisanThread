@@ -118,7 +118,7 @@ export const CourierHomeScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   // Re-fetch live whenever screen gains focus and reset active tab to 'jobs'
   useFocusEffect(
@@ -268,7 +268,7 @@ export const CourierHomeScreen = ({ navigation }) => {
 
         {/* "Today's jobs" Section Header */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Today's jobs</Text>
+          <Text style={styles.sectionTitle}>{"Today's jobs"}</Text>
           <TouchableOpacity
             onPress={() => navigation?.navigate?.(ROUTES.COURIER.ROUTES)}
             activeOpacity={0.7}
