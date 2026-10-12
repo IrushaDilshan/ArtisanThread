@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,103 +8,63 @@ import {
   Modal,
   Image,
   Alert,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
-import { Button } from '../../components/Button';
+import { orderService } from '../../services/orderService';
 
-const INITIAL_ORDERS = [
-  {
-    id: 'AT-1049',
-    item: 'Indigo Silk Scarf (Qty 2)',
-    price: 'LKR 25,000',
-    buyer: 'Maya Lin',
-    phone: '+94 77 123 4567',
-    destination: '42 Ward Place, Colombo 07',
-    date: 'Oct 7, 2026',
-    due: 'Today, 3:30 PM',
-    status: 'PENDING', // PENDING | SHIPPED | DELIVERED
-    notes: 'Please pack in eco-friendly gift box with custom silk ribbon.',
-    photo: 'https://images.unsplash.com/photo-1606760227091-3dd850d97f1d?w=400',
-  },
-  {
-    id: 'AT-1048',
-    item: 'Ceramic Matcha Bowl',
-    price: 'LKR 8,500',
-    buyer: 'Julian Moore',
-    phone: '+94 71 987 6543',
-    destination: 'Station Road, Kalutara',
-    date: 'Oct 6, 2026',
-    due: 'Tomorrow, 11:00 AM',
-    status: 'PENDING',
-    notes: 'Fragile ceremonial craft piece. Double bubble wrap required.',
-    photo: 'https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?w=400',
-  },
-  {
-    id: 'AT-1045',
-    item: 'Sashiko Coaster Set',
-    price: 'LKR 4,200',
-    buyer: 'Sarah Jenkins',
-    phone: '+94 76 555 4321',
-    destination: 'Beach Road, Beruwala',
-    date: 'Sep 27, 2026',
-    due: 'Delivered',
-    status: 'DELIVERED',
-    notes: 'Direct handoff at workshop studio.',
-    photo: 'https://images.unsplash.com/photo-1590736704728-f4730bb30770?w=400',
-  },
-  {
-    id: 'AT-1042',
-    item: 'Hand-carved Teak Stool',
-    price: 'LKR 24,000',
-    buyer: 'Manji Samaranayaka',
-    phone: '+94 77 888 9900',
-    destination: 'Peradeniya Road, Kandy',
-    date: 'Oct 5, 2026',
-    due: 'In Transit',
-    status: 'SHIPPED',
-    notes: 'Handed to Courier Partner Marcus Vance.',
-    photo: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?w=400',
-  },
-  {
-    id: 'AT-1039',
-    item: 'Hand-loomed Cotton Cushion',
-    price: 'LKR 6,800',
-    buyer: 'Nimali Fernando',
-    phone: '+94 75 444 3322',
-    destination: 'Main Street, Galle',
-    date: 'Oct 4, 2026',
-    due: 'In Transit',
-    status: 'SHIPPED',
-    notes: 'Express courier tracking #ATH-9942-PY.',
-    photo: 'https://images.unsplash.com/photo-1590736704728-f4730bb30770?w=400',
-  },
-  {
-    id: 'AT-1034',
-    item: 'Botanical Dye Tapestry',
-    price: 'LKR 18,500',
-    buyer: 'Kavinda Perera',
-    phone: '+94 72 111 2233',
-    destination: 'Negombo Road, Kurunegala',
-    date: 'Oct 1, 2026',
-    due: 'Delivered',
-    status: 'DELIVERED',
-    notes: 'Customer signed digital receipt.',
-    photo: 'https://images.unsplash.com/photo-1606760227091-3dd850d97f1d?w=400',
-  },
-];
-
-export const ArtisanOrdersScreen = () => {
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
+export const ArtisanOrdersScreen = ({ navigation }) => {
+  const [orders, setOrders] = useState([]);
   const [selectedFilter, setSelectedFilter] = useState('ALL'); // ALL | PENDING | SHIPPED | DELIVERED
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+
+  const loadOrders = useCallback(async () => {
+    try {
+      const data = await orderService.getArtisanOrders();
+      setOrders(data || []);
+      // Keep selectedOrder in sync if modal is open
+      if (selectedOrder) {
+        const found = (data || []).find((o) => o.id === selectedOrder.id);
+        if (found) setSelectedOrder(found);
+      }
+    } catch (e) {
+      console.warn('Error loading artisan orders:', e.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [selectedOrder]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOrders();
+    }, [loadOrders])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadOrders();
+  };
+
+  const isPendingStatus = (s) =>
+    !s ||
+    s === 'PENDING' ||
+    s === 'CONFIRMED' ||
+    s === 'CRAFTING' ||
+    s === 'READY_FOR_PICKUP';
 
   // Compute Order Summary Counts dynamically
   const summaryCounts = {
     all: orders.length,
-    pending: orders.filter((o) => o.status === 'PENDING').length,
+    pending: orders.filter((o) => isPendingStatus(o.status)).length,
     shipped: orders.filter((o) => o.status === 'SHIPPED').length,
     delivered: orders.filter((o) => o.status === 'DELIVERED').length,
   };
@@ -112,18 +72,68 @@ export const ArtisanOrdersScreen = () => {
   // Filter orders by summary status selection
   const filteredOrders = orders.filter((ord) => {
     if (selectedFilter === 'ALL') return true;
+    if (selectedFilter === 'PENDING') return isPendingStatus(ord.status);
     return ord.status === selectedFilter;
   });
 
-  const handleUpdateStatus = (newStatus) => {
+  const handleUpdateStatus = async (newStatus) => {
     if (!selectedOrder) return;
 
-    const updatedOrders = orders.map((o) =>
-      o.id === selectedOrder.id ? { ...o, status: newStatus } : o
-    );
+    try {
+      const isShipped = newStatus === 'SHIPPED' || newStatus === 'COURIER_ASSIGNED';
+      let extra = {};
+      if (isShipped && !selectedOrder.assignedCourier) {
+        extra = {
+          assignedCourier: 'Marcus Vance',
+          tracking_code: selectedOrder.tracking_code || `ATH-${Math.floor(1000 + Math.random() * 9000)}-LK`,
+        };
+      }
+      const updated = await orderService.updateOrderStatus(selectedOrder.id, newStatus);
+      if (newStatus === 'DELIVERED') {
+        await orderService.updatePaymentStatus(selectedOrder.id, 'released');
+      }
+      const mergedOrder = { ...selectedOrder, ...updated, ...extra, status: newStatus };
+      const updatedOrders = orders.map((o) =>
+        o.id === selectedOrder.id ? mergedOrder : o
+      );
+      setOrders(updatedOrders);
+      setSelectedOrder(mergedOrder);
+    } catch (e) {
+      Alert.alert('Status Error', e.message);
+    }
+  };
 
-    setOrders(updatedOrders);
-    setSelectedOrder({ ...selectedOrder, status: newStatus });
+  const handleAssignCourier = async (orderToAssign) => {
+    if (!orderToAssign || assigning) return;
+
+    try {
+      setAssigning(true);
+      const courierPartner = {
+        id: 'usr_courier_01',
+        name: 'Marcus Vance',
+        vehicle: 'Electric Cargo Van #402',
+      };
+
+      const { updatedOrder, delivery } = await orderService.assignCourierToOrder(
+        orderToAssign.id,
+        courierPartner
+      );
+
+      const nextOrders = orders.map((o) =>
+        o.id === orderToAssign.id ? updatedOrder : o
+      );
+      setOrders(nextOrders);
+      setSelectedOrder(updatedOrder);
+
+      Alert.alert(
+        'Courier Assigned! 🚚',
+        `Order #${updatedOrder.id} has been dispatched to courier partner ${courierPartner.name}.\n\nTracking ID: ${updatedOrder.tracking_code}\n\nThis delivery is now live in the Courier Daily Jobs dashboard!`
+      );
+    } catch (err) {
+      Alert.alert('Assignment Error', err.message || 'Unable to assign courier.');
+    } finally {
+      setAssigning(false);
+    }
   };
 
   return (
@@ -133,7 +143,11 @@ export const ArtisanOrdersScreen = () => {
         subtitle="Manage client orders, customer details & dispatch status"
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
         {/* Top Order Summary Filter List */}
         <View style={styles.summaryContainer}>
           <Text style={styles.summaryHeaderTitle}>Order Summary & Filter</Text>
@@ -180,59 +194,92 @@ export const ArtisanOrdersScreen = () => {
         </View>
 
         <View style={styles.list}>
-          {filteredOrders.length === 0 ? (
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 24 }} />
+          ) : filteredOrders.length === 0 ? (
             <View style={styles.emptyOrdersContainer}>
               <Text style={styles.emptyEmoji}>📦</Text>
               <Text style={styles.emptyText}>No {selectedFilter.toLowerCase()} orders found</Text>
             </View>
           ) : (
-            filteredOrders.map((ord) => (
-              <TouchableOpacity
-                key={ord.id}
-                onPress={() => setSelectedOrder(ord)}
-                activeOpacity={0.85}
-              >
-                <Card style={styles.card}>
-                  <View style={styles.header}>
-                    <Text style={styles.orderId}>#{ord.id}</Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        ord.status === 'PENDING' && styles.statusBadgePending,
-                        ord.status === 'SHIPPED' && styles.statusBadgeShipped,
-                        ord.status === 'DELIVERED' && styles.statusBadgeDelivered,
-                      ]}
-                    >
-                      <Text
+            filteredOrders.map((ord) => {
+              const pending = isPendingStatus(ord.status);
+              const displayStatus = pending ? 'PENDING' : ord.status;
+              const hasCourier = Boolean(ord.assignedCourier);
+
+              return (
+                <TouchableOpacity
+                  key={ord.id}
+                  onPress={() => setSelectedOrder(ord)}
+                  activeOpacity={0.85}
+                >
+                  <Card style={styles.card}>
+                    <View style={styles.header}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.orderId}>#{ord.id}</Text>
+                        {ord.payment_status === 'held' && (
+                          <View style={styles.escrowTag}>
+                            <Text style={styles.escrowTagText}>🛡️ Escrow Held</Text>
+                          </View>
+                        )}
+                        {ord.payment_status === 'cash_on_delivery' && (
+                          <View style={styles.codTag}>
+                            <Text style={styles.codTagText}>💵 COD</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View
                         style={[
-                          styles.statusText,
-                          ord.status === 'PENDING' && styles.statusTextPending,
-                          ord.status === 'SHIPPED' && styles.statusTextShipped,
-                          ord.status === 'DELIVERED' && styles.statusTextDelivered,
+                          styles.statusBadge,
+                          displayStatus === 'PENDING' && styles.statusBadgePending,
+                          displayStatus === 'SHIPPED' && styles.statusBadgeShipped,
+                          displayStatus === 'DELIVERED' && styles.statusBadgeDelivered,
                         ]}
                       >
-                        {ord.status}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.statusText,
+                            displayStatus === 'PENDING' && styles.statusTextPending,
+                            displayStatus === 'SHIPPED' && styles.statusTextShipped,
+                            displayStatus === 'DELIVERED' && styles.statusTextDelivered,
+                          ]}
+                        >
+                          {displayStatus}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
 
-                  <View style={styles.orderContentRow}>
-                    <Image source={{ uri: ord.photo }} style={styles.craftThumb} resizeMode="cover" />
+                    <View style={styles.orderContentRow}>
+                      <Image
+                        source={{ uri: ord.photo }}
+                        style={styles.craftThumb}
+                        resizeMode="cover"
+                      />
 
-                    <View style={styles.orderMainInfo}>
-                      <Text style={styles.itemTitle}>{ord.item}</Text>
-                      <Text style={styles.priceText}>{ord.price}</Text>
-                      <Text style={styles.clientText}>👤 Client: {ord.buyer}</Text>
-                      <Text style={styles.destText}>📍 {ord.destination}</Text>
+                      <View style={styles.orderMainInfo}>
+                        <Text style={styles.itemTitle}>{ord.item}</Text>
+                        <Text style={styles.priceText}>{ord.price}</Text>
+                        <Text style={styles.clientText}>👤 Client: {ord.buyer}</Text>
+                        <Text style={styles.destText}>📍 {ord.destination}</Text>
+                      </View>
                     </View>
-                  </View>
 
-                  <View style={styles.cardFooterRow}>
-                    <Text style={styles.viewDetailsLink}>Tap for Customer & Order Details →</Text>
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            ))
+                    {hasCourier && (
+                      <View style={styles.courierBanner}>
+                        <Text style={styles.courierBannerText}>
+                          🚚 Assigned: {ord.assignedCourier} · {ord.tracking_code}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.cardFooterRow}>
+                      <Text style={styles.viewDetailsLink}>Tap for Customer & Order Details →</Text>
+                    </View>
+                  </Card>
+                </TouchableOpacity>
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -268,7 +315,7 @@ export const ArtisanOrdersScreen = () => {
                     <View
                       style={[
                         styles.statusBadge,
-                        selectedOrder.status === 'PENDING' && styles.statusBadgePending,
+                        isPendingStatus(selectedOrder.status) && styles.statusBadgePending,
                         selectedOrder.status === 'SHIPPED' && styles.statusBadgeShipped,
                         selectedOrder.status === 'DELIVERED' && styles.statusBadgeDelivered,
                       ]}
@@ -276,15 +323,78 @@ export const ArtisanOrdersScreen = () => {
                       <Text
                         style={[
                           styles.statusText,
-                          selectedOrder.status === 'PENDING' && styles.statusTextPending,
+                          isPendingStatus(selectedOrder.status) && styles.statusTextPending,
                           selectedOrder.status === 'SHIPPED' && styles.statusTextShipped,
                           selectedOrder.status === 'DELIVERED' && styles.statusTextDelivered,
                         ]}
                       >
-                        {selectedOrder.status}
+                        {isPendingStatus(selectedOrder.status) ? 'PENDING' : selectedOrder.status}
                       </Text>
                     </View>
                   </View>
+
+                  {/* Highlighted Dispatch to Courier Section */}
+                  {isPendingStatus(selectedOrder.status) ? (
+                    <Card style={styles.assignCourierCard}>
+                      <View style={styles.assignCourierHeader}>
+                        <Text style={styles.assignCourierTitle}>🚚 DISPATCH WITH COURIER</Text>
+                        <View style={styles.fastTag}>
+                          <Text style={styles.fastTagText}>Recommended</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.assignCourierDesc}>
+                        Assign this order to partner courier for workshop pickup and direct delivery to customer.
+                      </Text>
+
+                      <View style={styles.courierPartnerBox}>
+                        <View style={styles.courierAvatar}>
+                          <Text style={styles.courierAvatarText}>MV</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.courierName}>Marcus Vance</Text>
+                          <Text style={styles.courierDetails}>⚡ Electric Cargo Van #402 · 4.98★</Text>
+                          <Text style={styles.courierRoute}>📍 Ready in Kandy & Central Zone</Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.assignCourierBtn}
+                        onPress={() => handleAssignCourier(selectedOrder)}
+                        activeOpacity={0.85}
+                        disabled={assigning}
+                      >
+                        {assigning ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.assignCourierBtnText}>
+                            Assign to Marcus Vance & Dispatch 📦
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </Card>
+                  ) : (
+                    <Card style={styles.assignedCard}>
+                      <Text style={styles.assignedCardTitle}>🚚 COURIER PARTNER ASSIGNED</Text>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Assigned Courier:</Text>
+                        <Text style={styles.detailValHighlight}>
+                          {selectedOrder.assignedCourier || 'Marcus Vance'}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Tracking Code:</Text>
+                        <Text style={styles.detailValHighlight}>
+                          {selectedOrder.tracking_code || 'ATH-9942-PY'}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Courier Status:</Text>
+                        <Text style={styles.detailValNote}>
+                          Active in Courier Daily Jobs dashboard
+                        </Text>
+                      </View>
+                    </Card>
+                  )}
 
                   {/* Customer Details Card Section */}
                   <Card style={styles.detailsCard}>
@@ -300,6 +410,12 @@ export const ArtisanOrdersScreen = () => {
                     <View style={styles.detailRow}>
                       <Text style={styles.detailLabel}>Shipping Address:</Text>
                       <Text style={styles.detailVal}>{selectedOrder.destination}</Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Payment Method:</Text>
+                      <Text style={styles.detailVal}>
+                        {selectedOrder.payment_method || 'Secure Escrow Payment'}
+                      </Text>
                     </View>
                     <View style={styles.detailRow}>
                       <Text style={styles.detailLabel}>Delivery Notes:</Text>
@@ -334,18 +450,30 @@ export const ArtisanOrdersScreen = () => {
 
                 {/* Status Action Buttons */}
                 <View style={styles.actionButtonsContainer}>
-                  <Text style={styles.actionHeaderTitle}>Update Order Status:</Text>
+                  <Text style={styles.actionHeaderTitle}>Timeline Status Progression:</Text>
                   <View style={styles.statusButtonsRow}>
                     <TouchableOpacity
-                      onPress={() => handleUpdateStatus('PENDING')}
+                      onPress={() => handleUpdateStatus('CRAFTING')}
                       activeOpacity={0.8}
                       style={[
                         styles.statusActionBtn,
                         styles.btnPending,
-                        selectedOrder.status === 'PENDING' && styles.btnActiveSelected,
+                        selectedOrder.status === 'CRAFTING' && styles.btnActiveSelected,
                       ]}
                     >
-                      <Text style={styles.statusActionBtnText}>🟡 Pending</Text>
+                      <Text style={styles.statusActionBtnText}>🎨 Crafting</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => handleUpdateStatus('READY_FOR_PICKUP')}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.statusActionBtn,
+                        styles.btnPending,
+                        selectedOrder.status === 'READY_FOR_PICKUP' && styles.btnActiveSelected,
+                      ]}
+                    >
+                      <Text style={styles.statusActionBtnText}>📦 Ready</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -354,7 +482,7 @@ export const ArtisanOrdersScreen = () => {
                       style={[
                         styles.statusActionBtn,
                         styles.btnShipped,
-                        selectedOrder.status === 'SHIPPED' && styles.btnActiveSelected,
+                        (selectedOrder.status === 'SHIPPED' || selectedOrder.status === 'COURIER_ASSIGNED') && styles.btnActiveSelected,
                       ]}
                     >
                       <Text style={styles.statusActionBtnText}>🚚 Shipped</Text>
@@ -408,40 +536,42 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   summaryCard: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
     borderRadius: RADIUS.md,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    minWidth: 95,
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    minWidth: 84,
   },
   summaryCount: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
   },
   summaryLabel: {
     fontSize: 11,
+    fontWeight: '600',
     color: COLORS.textSecondary,
     marginTop: 2,
-    fontWeight: '600',
   },
   summaryLabelActive: {
     color: COLORS.textPrimary,
     fontWeight: '700',
   },
 
-  // List Header
+  // Orders List Header
   listSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginTop: 10,
-    marginBottom: 8,
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   listSectionTitle: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
@@ -451,45 +581,60 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // Orders List & Cards
   list: {
     gap: 12,
   },
-  emptyOrdersContainer: {
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  emptyEmoji: {
-    fontSize: 36,
-    marginBottom: 6,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-
   card: {
     padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
   },
   orderId: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
-    color: COLORS.textMuted,
+    color: COLORS.textPrimary,
+  },
+  escrowTag: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  escrowTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  codTag: {
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  codTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#E65100',
   },
   statusBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
   },
   statusBadgePending: {
-    backgroundColor: '#FFF4E5',
+    backgroundColor: '#FFF8E1',
   },
   statusBadgeShipped: {
     backgroundColor: '#E1F5FE',
@@ -498,9 +643,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9',
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: COLORS.textSecondary,
+    letterSpacing: 0.5,
   },
   statusTextPending: {
     color: '#ED6C02',
@@ -515,48 +660,78 @@ const styles = StyleSheet.create({
   orderContentRow: {
     flexDirection: 'row',
     gap: 12,
-    alignItems: 'center',
   },
   craftThumb: {
-    width: 54,
-    height: 54,
-    borderRadius: 10,
-    backgroundColor: '#E8F5E9',
+    width: 68,
+    height: 68,
+    borderRadius: RADIUS.md,
+    backgroundColor: '#F3F4F6',
   },
   orderMainInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
   itemTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.textPrimary,
+    marginBottom: 2,
   },
   priceText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: COLORS.primary,
-    marginTop: 2,
+    marginBottom: 4,
   },
   clientText: {
-    fontSize: 12,
+    fontSize: 11,
     color: COLORS.textSecondary,
-    marginTop: 2,
+    marginBottom: 2,
   },
   destText: {
     fontSize: 11,
     color: COLORS.textMuted,
-    marginTop: 1,
   },
+
+  courierBanner: {
+    marginTop: 8,
+    backgroundColor: '#E0F2FE',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.sm,
+  },
+  courierBannerText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0369A1',
+  },
+
   cardFooterRow: {
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+    alignItems: 'flex-end',
   },
   viewDetailsLink: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: COLORS.primary,
+  },
+
+  emptyOrdersContainer: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyEmoji: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
 
   // Modal Window Styles
@@ -566,37 +741,34 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    maxHeight: '88%',
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xl,
+    maxHeight: '90%',
   },
   modalHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
+    marginBottom: 12,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: COLORS.textPrimary,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: COLORS.textSecondary,
+    color: COLORS.textMuted,
     marginTop: 2,
   },
   closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#EAEAEA',
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: '#F3F4F6',
   },
   closeBtnText: {
     fontSize: 14,
@@ -604,76 +776,195 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   modalScroll: {
-    paddingVertical: 12,
+    marginBottom: 10,
   },
   modalStatusRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    padding: 10,
+    borderRadius: RADIUS.md,
     marginBottom: 12,
   },
   modalStatusLabel: {
     fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textMuted,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
   },
 
-  detailsCard: {
+  // Assign Courier Card
+  assignCourierCard: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
+    borderWidth: 1.5,
+    borderRadius: RADIUS.lg,
     padding: SPACING.md,
     marginBottom: 12,
+  },
+  assignCourierHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  assignCourierTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#166534',
+    letterSpacing: 0.6,
+  },
+  fastTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fastTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  assignCourierDesc: {
+    fontSize: 11,
+    color: '#14532D',
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  courierPartnerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    marginBottom: 12,
+  },
+  courierAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#00796B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  courierAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  courierName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  courierDetails: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
+  courierRoute: {
+    fontSize: 10,
+    color: '#047857',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  assignCourierBtn: {
+    backgroundColor: '#00796B',
+    paddingVertical: 12,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#00796B',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  assignCourierBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Assigned Card
+  assignedCard: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+    borderWidth: 1,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: 12,
+  },
+  assignedCardTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0369A1',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+
+  // Modal Details Cards
+  detailsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
   },
   detailsHeaderTitle: {
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.textMuted,
-    letterSpacing: 0.6,
-    marginBottom: 10,
+    letterSpacing: 0.5,
+    marginBottom: 8,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 4,
+    paddingVertical: 3,
   },
   detailLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: COLORS.textSecondary,
+    fontWeight: '500',
   },
   detailVal: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
     color: COLORS.textPrimary,
-    flex: 1,
+    fontWeight: '600',
+    maxWidth: '65%',
     textAlign: 'right',
   },
   detailValHighlight: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
     color: COLORS.primary,
+    fontWeight: '700',
   },
   detailValNote: {
-    fontSize: 12,
+    fontSize: 11,
+    color: COLORS.textMuted,
     fontStyle: 'italic',
-    color: COLORS.textSecondary,
-    flex: 1,
+    maxWidth: '65%',
     textAlign: 'right',
   },
-
   craftDetailRow: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 8,
     alignItems: 'center',
-    marginBottom: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
   },
   modalCraftThumb: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#F3F4F6',
   },
   modalItemTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
@@ -686,15 +977,15 @@ const styles = StyleSheet.create({
 
   // Action Buttons
   actionButtonsContainer: {
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
   },
   actionHeaderTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: COLORS.textMuted,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   statusButtonsRow: {
     flexDirection: 'row',
@@ -702,7 +993,7 @@ const styles = StyleSheet.create({
   },
   statusActionBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -725,7 +1016,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.textPrimary,
   },
   statusActionBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
