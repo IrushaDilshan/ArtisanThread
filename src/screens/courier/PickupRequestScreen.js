@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Linking,
   Platform,
@@ -14,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ROUTES } from '../../navigation/routes';
 import { courierService } from '../../services/courierService';
+import { orderService } from '../../services/orderService';
 
 // Interactive Vector Map Preview Graphic with Route Polyline and Live Markers
 const MapPreview = ({ onOpenMaps, artisanName, pickupCity, pickupStreet, eta = '12 min (4.8 km)' }) => (
@@ -146,38 +146,59 @@ export const PickupRequestScreen = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState('jobs');
   const [hasArrived, setHasArrived] = useState(false);
   const [deliveryData, setDeliveryData] = useState(null);
+  const [matchedOrder, setMatchedOrder] = useState(null);
 
   const initialTrackingId = route?.params?.trackingId || 'ATH-9942-PY';
 
   // Load delivery details dynamically based on selected delivery
   useEffect(() => {
     let isMounted = true;
-    courierService.verifyTrackingCode(initialTrackingId).then((del) => {
-      if (isMounted && del) {
-        setDeliveryData(del);
-      }
-    }).catch(() => {});
+    (async () => {
+      try {
+        const [del, ord] = await Promise.all([
+          courierService.verifyTrackingCode(initialTrackingId),
+          orderService.getOrderById(initialTrackingId),
+        ]);
+        if (isMounted) {
+          if (del) setDeliveryData(del);
+          if (ord) setMatchedOrder(ord);
+          else if (del?.order_id) {
+            const byId = await orderService.getOrderById(del.order_id);
+            if (isMounted && byId) setMatchedOrder(byId);
+          }
+        }
+      } catch (_) {}
+    })();
     return () => { isMounted = false; };
   }, [initialTrackingId]);
 
-  const artisanName = deliveryData?.pickup_address?.name || 'Malsha Maduwanthi';
+  const artisanName =
+    matchedOrder?.artisanName ||
+    deliveryData?.pickup_address?.name ||
+    'Artisan Workshop';
   const artisanInitials = artisanName
     .split(' ')
+    .filter(Boolean)
     .map((w) => w[0])
     .join('')
     .slice(0, 2)
-    .toUpperCase() || 'MM';
-  const artisanPhone = deliveryData?.pickup_address?.phone || '077 412 6688';
+    .toUpperCase() || 'AW';
+  const artisanPhone =
+    deliveryData?.pickup_address?.phone ||
+    '077 412 6688';
   const pickupCity = deliveryData?.pickup_address?.city || 'Payagala';
   const pickupStreet = deliveryData?.pickup_address?.address_line1 || 'Temple Road';
   const pickupLat = deliveryData?.pickup_lat || 6.5700;
   const pickupLng = deliveryData?.pickup_lng || 79.9800;
-  const fragileDetails = deliveryData?.recipient_notes || '2 parcels · 1.4 kg · hand-dyed batik, do not fold';
+  const fragileDetails =
+    matchedOrder?.item
+      ? `${matchedOrder.item} · Handcrafted`
+      : deliveryData?.recipient_notes || 'Handcrafted artisan parcel · Fragile';
 
   const artisan = {
     name: artisanName,
     initials: artisanInitials,
-    subtitle: deliveryData?.pickup_address?.details || 'Batik & handicraft workshop',
+    subtitle: deliveryData?.pickup_address?.details || matchedOrder?.item || 'Artisan Craft Atelier',
     phone: artisanPhone,
     address: {
       house: 'No. 142/B',
@@ -252,11 +273,11 @@ export const PickupRequestScreen = ({ navigation, route }) => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header Bar with Back Button */}
-      <View style={[styles.headerBar, Platform.OS === 'android' && { paddingTop: insets.top }]}>
+      <View style={[styles.headerBar, { paddingTop: Math.max(insets.top + 8, 16) }]}>
         <TouchableOpacity
           onPress={() => navigation?.goBack()}
           activeOpacity={0.7}
@@ -490,11 +511,15 @@ export const PickupRequestScreen = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -504,7 +529,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
   },
   backButton: {

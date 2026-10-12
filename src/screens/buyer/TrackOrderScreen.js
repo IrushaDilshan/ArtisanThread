@@ -572,6 +572,18 @@ export const TrackOrderScreen = ({ navigation, route }) => {
     null;
   const routeCoordinates = points;
 
+  const trackingNumber =
+    order.tracking_code ||
+    delivery?.tracking_code ||
+    orderId;
+  const buyerPinRaw =
+    delivery?.delivery_code ||
+    order?.delivery_code ||
+    (trackingNumber ? String(trackingNumber).replace(/[^0-9]/g, '').slice(-4) : '') ||
+    '1234';
+  const displayBuyerPin =
+    buyerPinRaw.length >= 4 ? buyerPinRaw.slice(-4) : buyerPinRaw.padStart(4, '0');
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
@@ -695,6 +707,26 @@ export const TrackOrderScreen = ({ navigation, route }) => {
             </Text>
           )}
         </Card>
+
+        {/* 4-Digit Buyer Delivery Handover PIN */}
+        {courierAssigned && (
+          <Card style={styles.deliveryPinCard}>
+            <View style={styles.deliveryPinRow}>
+              <View style={styles.deliveryPinIconBox}>
+                <Text style={styles.deliveryPinIcon}>🔐</Text>
+              </View>
+              <View style={styles.deliveryPinTextSide}>
+                <Text style={styles.deliveryPinTitle}>Delivery Handover PIN</Text>
+                <Text style={styles.deliveryPinSubtitle}>
+                  Read this 4-digit verification code to the courier to confirm delivery
+                </Text>
+              </View>
+              <View style={styles.deliveryPinBadge}>
+                <Text style={styles.deliveryPinDigits}>{displayBuyerPin}</Text>
+              </View>
+            </View>
+          </Card>
+        )}
 
         {courierAssigned && courierPhone && status !== 'CANCELLED' ? (
           <Button
