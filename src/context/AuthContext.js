@@ -168,10 +168,32 @@ export const AuthProvider = ({ children }) => {
     }
 
     const selectedRole = typeof arg1 === 'string' ? arg1.toLowerCase() : ROLES.BUYER;
+
+    // Try to restore the existing Supabase session (e.g. just after registration)
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user) {
+          const sbUser = sessionData.session.user;
+          const profile = await authService.getProfile(sbUser.id);
+          setAuthenticatedUser(
+            { ...sbUser, role: selectedRole },
+            { ...profile, role: selectedRole, ...customData }
+          );
+          console.log('[AuthContext] Role-string login: using real Supabase session for', sbUser.id);
+          return;
+        }
+      } catch (e) {
+        console.warn('[AuthContext] Could not restore Supabase session:', e.message);
+      }
+    }
+
+    // Fallback: demo/offline mode with local placeholder user
     const defaultData = DEFAULT_USERS[selectedRole] || DEFAULT_USERS[ROLES.BUYER];
     setUser({ ...defaultData, ...customData });
     setRole(selectedRole);
     setIsAuthenticated(true);
+    console.warn('[AuthContext] No Supabase session — using offline demo user for role:', selectedRole);
   };
 
   /**

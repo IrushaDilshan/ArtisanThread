@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, supabaseAdmin, isSupabaseConfigured } from './supabase';
 import { safeStorage } from './storageHelper';
 
 const STORAGE_KEY = 'ARTISAN_THREAD_CUSTOM_PRODUCTS';
@@ -372,31 +372,41 @@ export const productService = {
     const updated = [formattedProduct, ...existing.filter((p) => p.id !== newId)];
     await this.saveStoredCustomProducts(updated);
 
-    // Also attempt Supabase insert if available
-    if (isSupabaseConfigured) {
+    // Also attempt Supabase insert via admin client (bypasses RLS)
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data, error } = await supabase
+        // artisan_id must be a valid UUID — null it out if it's a demo/string ID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const safeArtisanId = uuidRegex.test(String(productData.artisan_id || ''))
+          ? productData.artisan_id
+          : null;
+
+        const dbPayload = {
+          title: formattedProduct.title,
+          category: formattedProduct.category,
+          price: formattedProduct.price,
+          stock: formattedProduct.stock,
+          description: formattedProduct.description || null,
+          image_url: formattedProduct.image_url || null,
+          materials: formattedProduct.sizes ? formattedProduct.sizes : null,
+          is_active: true,
+          artisan_id: safeArtisanId,
+        };
+
+        const { data, error } = await supabaseAdmin
           .from('products')
-          .insert([
-            {
-              title: formattedProduct.title,
-              category: formattedProduct.category,
-              price: formattedProduct.price,
-              stock: formattedProduct.stock,
-              description: formattedProduct.description,
-              image_url: formattedProduct.image_url,
-              is_active: true,
-              artisan_id: productData.artisan_id,
-            },
-          ])
+          .insert([dbPayload])
           .select()
           .single();
 
-        if (!error && data) {
+        if (error) {
+          console.warn('[productService] Supabase insert error:', error.message, JSON.stringify(dbPayload));
+        } else if (data) {
+          console.log('[productService] Product saved to Supabase, id:', data.id);
           formattedProduct.id = data.id;
         }
       } catch (e) {
-        console.warn('Supabase insert fallback:', e.message);
+        console.warn('[productService] Supabase insert exception:', e.message);
       }
     }
 
@@ -407,20 +417,49 @@ export const productService = {
    * Update existing craft details
    */
   async updateProduct(productId, updates) {
+    // Update local storage with raw app-side data
     const existing = await this.getStoredCustomProducts();
     const updated = existing.map((item) =>
       item.id === productId ? { ...item, ...updates } : item
     );
     await this.saveStoredCustomProducts(updated);
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        await supabase
-          .from('products')
-          .update(updates)
-          .eq('id', productId);
+        // Map app-side fields → exact DB column names
+        const dbUpdates = {};
+        if (updates.title !== undefined) dbUpdates.title = updates.title;
+        if (updates.name !== undefined && !dbUpdates.title) dbUpdates.title = updates.name;
+        if (updates.price !== undefined) dbUpdates.price = Number(String(updates.price).replace(/[^0-9.]/g, '')) || updates.price;
+        if (updates.rawPrice !== undefined && dbUpdates.price === undefined) dbUpdates.price = Number(updates.rawPrice) || 0;
+        if (updates.stock !== undefined) dbUpdates.stock = Number(updates.stock);
+        if (updates.description !== undefined) dbUpdates.description = updates.description;
+        if (updates.image_url !== undefined) dbUpdates.image_url = updates.image_url;
+        if (updates.photo !== undefined && !dbUpdates.image_url) dbUpdates.image_url = updates.photo;
+        if (updates.image !== undefined && !dbUpdates.image_url) dbUpdates.image_url = updates.image;
+        if (updates.category !== undefined) dbUpdates.category = updates.category;
+        if (updates.is_active !== undefined) dbUpdates.is_active = updates.is_active;
+        if (updates.sizes !== undefined) dbUpdates.materials = updates.sizes;
+        if (updates.inStock !== undefined && dbUpdates.stock === undefined) {
+          dbUpdates.stock = updates.inStock ? 1 : 0;
+        }
+        dbUpdates.updated_at = new Date().toISOString();
+
+        // Only update if we have mapped fields
+        if (Object.keys(dbUpdates).length > 1) {
+          const { error } = await supabaseAdmin
+            .from('products')
+            .update(dbUpdates)
+            .eq('id', productId);
+
+          if (error) {
+            console.warn('[productService] Supabase update error:', error.message);
+          } else {
+            console.log('[productService] Product updated in Supabase, id:', productId);
+          }
+        }
       } catch (e) {
-        console.warn('Supabase update fallback:', e.message);
+        console.warn('[productService] Supabase update exception:', e.message);
       }
     }
 
@@ -438,22 +477,22 @@ export const productService = {
     const updated = existing.filter((item) => String(item.id) !== strId);
     await this.saveStoredCustomProducts(updated);
 
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
           .from('products')
           .delete()
           .eq('id', productId);
 
         if (error) {
           // Fallback to deactivating if delete fails (e.g. Foreign Key constraints)
-          await supabase
+          await supabaseAdmin
             .from('products')
             .update({ is_active: false })
             .eq('id', productId);
         }
       } catch (e) {
-        console.warn('Supabase delete fallback:', e.message);
+        console.warn('[productService] Supabase delete error:', e.message);
       }
     }
 

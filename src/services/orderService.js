@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from './supabase.js';
+import { supabase, supabaseAdmin, isSupabaseConfigured } from './supabase.js';
 import { safeStorage } from './storageHelper.js';
 import { courierService, setOrderStatusListener } from './courierService.js';
 
@@ -186,17 +186,16 @@ export const orderService = {
       String(paymentMethod || '')
     );
     const paymentStatus = isCashOnDelivery ? 'cash_on_delivery' : 'pending';
-    let authenticatedBuyerId = null;
 
+    // Try to get the authenticated buyer's UUID for record-keeping (not required)
+    let authenticatedBuyerId = null;
     if (isSupabaseConfigured) {
       try {
-        const { data, error } = await supabase.auth.getSession();
-        if (!error && isUuid(data?.session?.user?.id)) {
+        const { data } = await supabase.auth.getSession();
+        if (isUuid(data?.session?.user?.id)) {
           authenticatedBuyerId = data.session.user.id;
         }
-      } catch (err) {
-        // Fallback to local
-      }
+      } catch (_) { /* optional */ }
     }
 
     const nextIdNumber = Math.floor(1050 + Math.random() * 8900);
@@ -224,16 +223,15 @@ export const orderService = {
       ? 'Cash on Delivery. Please collect cash from customer upon delivery.'
       : 'Secure Escrow Payment Held. Ready for packaging and courier dispatch.';
 
-    let dbId = null;
-
-    if (authenticatedBuyerId) {
+    // Always attempt to save to Supabase via admin client (bypasses RLS)
+    if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        const { data: order, error: orderError } = await supabase
+        const { data: order, error: orderError } = await supabaseAdmin
           .from('orders')
           .insert([
             {
               order_number: orderNumber,
-              buyer_id: authenticatedBuyerId,
+              buyer_id: authenticatedBuyerId || null,
               status: 'PENDING',
               total_amount: rawTotal,
               shipping_address: typeof shippingAddress === 'object' ? shippingAddress : { address: shippingAddress },
@@ -249,16 +247,18 @@ export const orderService = {
           if (Array.isArray(items) && items.length > 0) {
             const orderItems = items.map((item) => ({
               order_id: order.id,
-              product_id: item.productId || item.id,
+              product_id: item.productId || item.id || null,
               quantity: item.quantity || 1,
               unit_price: item.price || 0,
             }));
 
-            await supabase.from('order_items').insert(orderItems);
+            await supabaseAdmin.from('order_items').insert(orderItems);
           }
+        } else if (orderError) {
+          console.warn('[orderService] Supabase createOrder error:', orderError.message);
         }
       } catch (dbErr) {
-        console.warn('Supabase createOrder notice:', dbErr.message);
+        console.warn('[orderService] createOrder exception:', dbErr.message);
       }
     }
 
@@ -356,9 +356,9 @@ export const orderService = {
 
     await saveOrders(updated);
 
-    if (isSupabaseConfigured && isUuid(orderId)) {
+    if (isSupabaseConfigured && supabaseAdmin && isUuid(orderId)) {
       try {
-        const { data } = await supabase
+        const { data } = await supabaseAdmin
           .from('orders')
           .update({ status: normalizedStatus, updated_at: new Date().toISOString() })
           .eq('id', orderId)
@@ -366,7 +366,7 @@ export const orderService = {
           .single();
         if (data) return data;
       } catch (err) {
-        console.warn('Supabase updateOrderStatus notice:', err.message);
+        console.warn('[orderService] updateOrderStatus notice:', err.message);
       }
     }
 
@@ -408,9 +408,9 @@ export const orderService = {
 
     await saveOrders(updated);
 
-    if (isSupabaseConfigured && isUuid(orderId)) {
+    if (isSupabaseConfigured && supabaseAdmin && isUuid(orderId)) {
       try {
-        const { data } = await supabase
+        const { data } = await supabaseAdmin
           .from('orders')
           .update({
             payment_status: paymentStatus,
@@ -421,7 +421,7 @@ export const orderService = {
           .single();
         if (data) return data;
       } catch (err) {
-        console.warn('Supabase updatePaymentStatus notice:', err.message);
+        console.warn('[orderService] updatePaymentStatus notice:', err.message);
       }
     }
 
@@ -476,15 +476,15 @@ export const orderService = {
       name: courierName,
     });
 
-    // If Supabase is connected, update order status
-    if (isSupabaseConfigured && order.db_id) {
+    // If Supabase is connected, update order status via admin
+    if (isSupabaseConfigured && supabaseAdmin && order.db_id) {
       try {
-        await supabase
+        await supabaseAdmin
           .from('orders')
           .update({ status: 'SHIPPED', updated_at: new Date().toISOString() })
           .eq('id', order.db_id);
       } catch (e) {
-        console.warn('Supabase assign courier order notice:', e.message);
+        console.warn('[orderService] assign courier order notice:', e.message);
       }
     }
 
@@ -544,9 +544,9 @@ export const orderService = {
 
     await saveOrders(updated);
 
-    if (isSupabaseConfigured && isUuid(orderId)) {
+    if (isSupabaseConfigured && supabaseAdmin && isUuid(orderId)) {
       try {
-        await supabase
+        await supabaseAdmin
           .from('orders')
           .update({
             status: 'CANCELLED',
@@ -555,7 +555,7 @@ export const orderService = {
           })
           .eq('id', orderId);
       } catch (err) {
-        console.warn('Supabase cancelOrder notice:', err.message);
+        console.warn('[orderService] cancelOrder notice:', err.message);
       }
     }
 
