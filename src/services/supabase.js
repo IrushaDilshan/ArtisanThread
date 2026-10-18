@@ -3,6 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SUPABASE_FALLBACK_URL = 'https://dgwcwxfjuvelnsusninc.supabase.co';
 const SUPABASE_FALLBACK_ANON_KEY = 'sb_publishable_KnB81ypFNj1SbOt_PlT7xA_wuZZRvHZ';
+// Service role key — bypasses RLS for server-side / admin writes
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnd2N3eGZqdXZlbG5zdXNuaW5jIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDM0NTE5NSwiZXhwIjoyMTA1OTIxMTk1fQ.uk5vhNy2_fOjkpt-oLcgH_yoI5KjBXsD2j4216Hmg-I';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || SUPABASE_FALLBACK_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || SUPABASE_FALLBACK_ANON_KEY;
@@ -53,7 +57,7 @@ const safeStorage = {
   },
 };
 
-// Supabase client with resilient storage adapter
+// Regular anon client (for reads & auth)
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -64,3 +68,18 @@ export const supabase = isSupabaseConfigured
       },
     })
   : null;
+
+/**
+ * Admin client using service role key — bypasses RLS for all write operations.
+ * Safe to use in React Native (no browser exposure).
+ */
+export const supabaseAdmin = isSupabaseConfigured
+  ? createClient(supabaseUrl, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    })
+  : null;
+

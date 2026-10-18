@@ -146,11 +146,7 @@ export const authService = {
       }
     }
 
-    // Sign out from initial signup session so user must log in through phone OTP verification
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {}
-
+    // Return data — do NOT sign out, so the caller can set up the session immediately
     return data;
   },
 
