@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
 	Alert,
 	FlatList,
@@ -14,30 +14,21 @@ import {
 	TouchableOpacity,
 	View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { COLORS } from '../../constants/colors';
 import { ROUTES } from '../../navigation/routes';
+import { chatService } from '../../services/chatService';
+import { useAuth } from '../../context/AuthContext';
 
 const INITIAL_MESSAGES = [
 	{
 		id: 'message-1',
 		sender: 'maker',
-		text: 'Ayubowan! Thank you for your interest in the Indigo Silk Batik Saree. I can customize the blouse piece and drape to your exact measurements.',
+		text: 'Ayubowan! Thank you for your interest in this handcrafted piece. How can I help you with custom sizing or materials?',
 		time: '10:24 AM',
-	},
-	{
-		id: 'message-2',
-		sender: 'buyer',
-		text: 'That sounds great! I’d love a custom fit. Can you send me a photo of the current fabric dye lot?',
-		time: '10:26 AM',
-	},
-	{
-		id: 'message-3',
-		sender: 'maker',
-		text: 'Here is the latest organic indigo dye batch from our workshop. The silk weave is ultra-soft and has a subtle sheen.',
-		time: '10:28 AM',
 	},
 ];
 
@@ -50,55 +41,94 @@ const SUGGESTIONS = [
 
 export const ChatScreen = ({ navigation, route }) => {
 	const insets = useSafeAreaInsets();
+	const { user } = useAuth();
+	const buyerName = user?.fullName || user?.name || 'Artisan Buyer';
+
+	const product = route?.params?.product || {};
+	const seller = route?.params?.artisan || product.artisan || 'Master Artisan';
+	const productName = product.title || product.name || 'Handcrafted Craft';
+	const productPrice = product.price
+		? (String(product.price).startsWith('LKR') ? product.price : `LKR ${Number(String(product.price).replace(/[^0-9.]/g, '') || 0).toLocaleString()}`)
+		: 'LKR 6,500';
+	const productImage =
+		product.image ||
+		product.image_url ||
+		product.photo ||
+		'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=500&q=85';
+
+	const [conversation, setConversation] = useState(null);
 	const [messages, setMessages] = useState(INITIAL_MESSAGES);
 	const [draft, setDraft] = useState('');
 	const listRef = useRef(null);
 
-	const product = route?.params?.product || {};
-	const seller = route?.params?.artisan || product.artisan || 'Nimali Batik Studio';
-	const productName = product.title || product.name || 'Indigo Silk Batik Saree & Dress';
-	const productPrice = product.price
-		? (String(product.price).startsWith('LKR') ? product.price : `LKR ${product.price}`)
-		: 'LKR 6,500';
-	const productImage =
-		product.image ||
-		'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=500&q=85';
+	// Load or create conversation for this specific item
+	const loadChat = useCallback(async () => {
+		try {
+			const conv = await chatService.getOrCreateConversationForProduct(
+				product,
+				buyerName,
+				seller
+			);
+			if (conv) {
+				setConversation(conv);
+				if (conv.messages && conv.messages.length > 0) {
+					setMessages(conv.messages);
+				}
+			}
+		} catch (e) {
+			console.warn('Error loading item chat conversation:', e);
+		}
+	}, [product, buyerName, seller]);
 
-	const sendMessage = (customText) => {
+	useFocusEffect(
+		useCallback(() => {
+			loadChat();
+		}, [loadChat])
+	);
+
+	useEffect(() => {
+		const unsubscribe = chatService.subscribe(() => {
+			loadChat();
+		});
+		return unsubscribe;
+	}, [loadChat]);
+
+	const sendMessage = async (customText) => {
 		const text = (customText || draft).trim();
 		if (!text) return;
 
-		const now = new Date();
-		const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-		setMessages((current) => [
-			...current,
-			{
-				id: `message-${Date.now()}`,
-				sender: 'buyer',
-				text,
-				time,
-			},
-		]);
 		setDraft('');
 		Keyboard.dismiss();
 
-		// Auto-reply simulation from maker for interactive delight
-		setTimeout(() => {
-			setMessages((curr) => [
-				...curr,
+		const targetConvId = conversation?.id;
+		if (targetConvId) {
+			const res = await chatService.sendMessage(targetConvId, {
+				sender: 'buyer',
+				senderName: buyerName,
+				text,
+			});
+			if (res?.conversation?.messages) {
+				setMessages(res.conversation.messages);
+				setConversation(res.conversation);
+			}
+		} else {
+			// Local fallback
+			const now = new Date();
+			const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+			setMessages((current) => [
+				...current,
 				{
-					id: `reply-${Date.now()}`,
-					sender: 'maker',
-					text: 'Thank you for your message! Our master artisan is reviewing your request and will reply shortly. All orders are protected under Escrow.',
-					time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+					id: `message-${Date.now()}`,
+					sender: 'buyer',
+					text,
+					time,
 				},
 			]);
-			requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-		}, 1200);
+		}
 
 		requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
 	};
+
 
 	const showAttachmentOptions = () =>
 		Alert.alert('Share Attachment', 'Choose an attachment to send to the master artisan.', [

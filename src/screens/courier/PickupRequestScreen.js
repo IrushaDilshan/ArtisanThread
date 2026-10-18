@@ -167,7 +167,7 @@ export const PickupRequestScreen = ({ navigation, route }) => {
             if (isMounted && byId) setMatchedOrder(byId);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     })();
     return () => { isMounted = false; };
   }, [initialTrackingId]);
@@ -211,7 +211,7 @@ export const PickupRequestScreen = ({ navigation, route }) => {
   };
 
   const handleCall = () => {
-    Linking.openURL(`tel:${artisan.phone.replace(/\s+/g, '')}`).catch(() => {});
+    Linking.openURL(`tel:${artisan.phone.replace(/\s+/g, '')}`).catch(() => { });
   };
 
   const handleFixAddress = () => {
@@ -222,16 +222,25 @@ export const PickupRequestScreen = ({ navigation, route }) => {
 
   // Launch Google Maps / Device Turn-by-Turn GPS Navigation
   const handleNavigate = () => {
-    const lat = pickupLat;
-    const lng = pickupLng;
-    const label = encodeURIComponent(`${artisan.name} - Pickup`);
+    const fullPickupAddress = [
+      artisan.address.house,
+      artisan.address.street,
+      artisan.address.city,
+      artisan.address.district,
+      'Sri Lanka',
+    ]
+      .filter(Boolean)
+      .join(', ');
 
-    // Android: Google Navigation intent (starts turn-by-turn navigation directly)
-    const googleNavIntent = `google.navigation:q=${lat},${lng}&mode=d`;
-    // Universal Google Maps directions URL (works on all devices and browsers)
-    const googleWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+    const label = encodeURIComponent(`${artisan.name} - Pickup`);
+    const addressQuery = encodeURIComponent(fullPickupAddress);
+
+    // Android: Google Navigation intent (starts turn-by-turn navigation directly from courier location)
+    const googleNavIntent = `google.navigation:q=${addressQuery}&mode=d`;
+    // Universal Google Maps directions URL (origin defaults to current location)
+    const googleWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${addressQuery}&travelmode=driving`;
     // iOS Apple Maps
-    const appleMapsUrl = `maps:0,0?q=${label}@${lat},${lng}`;
+    const appleMapsUrl = `maps:0,0?q=${label}&daddr=${addressQuery}`;
 
     const targetUrl = Platform.OS === 'ios' ? appleMapsUrl : googleNavIntent;
 

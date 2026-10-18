@@ -15,7 +15,7 @@ export const TRACKING_DEMO_LOCATIONS = {
   },
   buyerDestination: {
     latitude: 6.9147,
-    longitude: 79.973,
+    longitude: 79.8643,
   },
 };
 

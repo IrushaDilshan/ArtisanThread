@@ -54,8 +54,8 @@ export const CartScreen = ({ navigation, route }) => {
 				store: incomingProduct.artisan || 'Nimali Batik Studio',
 				specs: size ? `Handcrafted · Size ${size}` : (incomingProduct.specs || 'Handcrafted · Size M'),
 				price: formatPrice(incomingProduct.price),
-				quantity: 2,
-				image: incomingProduct.image || INITIAL_CART[0].image,
+				quantity: 1,
+				image: incomingProduct.image || incomingProduct.image_url || incomingProduct.photo || INITIAL_CART[0].image,
 			},
 		];
 	});
@@ -77,10 +77,10 @@ export const CartScreen = ({ navigation, route }) => {
 					return prev.map((item, idx) =>
 						idx === existingIndex
 							? {
-									...item,
-									quantity: item.quantity + 1,
-									specs: size ? `Handcrafted · Size ${size}` : item.specs,
-							  }
+								...item,
+								quantity: item.quantity + 1,
+								specs: size ? `Handcrafted · Size ${size}` : item.specs,
+							}
 							: item
 					);
 				}
@@ -93,7 +93,7 @@ export const CartScreen = ({ navigation, route }) => {
 						specs: size ? `Handcrafted · Size ${size}` : 'Handcrafted · Size M',
 						price: formatPrice(incomingProduct.price),
 						quantity: 1,
-						image: incomingProduct.image || INITIAL_CART[0].image,
+						image: incomingProduct.image || incomingProduct.image_url || incomingProduct.photo || INITIAL_CART[0].image,
 					},
 				];
 			});

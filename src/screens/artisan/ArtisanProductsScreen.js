@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
-import { productService, isSupabaseConfigured } from '../../services';
+import { productService } from '../../services';
 
 export const ArtisanProductsScreen = () => {
   const { user } = useAuth();
@@ -36,15 +36,9 @@ export const ArtisanProductsScreen = () => {
   const [saving, setSaving] = useState(false);
 
   const loadInventory = useCallback(async () => {
-    if (!user?.id) {
-      setInventory([]);
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
-      const data = await productService.getArtisanProducts(user.id);
+      const data = await productService.getArtisanProducts(user?.id);
       if (data && data.length > 0) {
         const formatted = data.map((item) => {
           let status = 'Live';
@@ -53,9 +47,9 @@ export const ArtisanProductsScreen = () => {
 
           return {
             id: item.id,
-            title: item.title,
-            stock: item.stock,
-            price: `LKR ${Number(item.price || 0).toLocaleString()}`,
+            title: item.title || item.name,
+            stock: item.stock !== undefined ? item.stock : 1,
+            price: String(item.price).startsWith('LKR') ? item.price : `LKR ${Number(item.price || 0).toLocaleString()}`,
             status,
             category: item.category,
           };
@@ -65,13 +59,13 @@ export const ArtisanProductsScreen = () => {
         setInventory([]);
       }
     } catch (e) {
-      console.warn('Could not load inventory from Supabase:', e.message);
+      console.warn('Could not load inventory:', e.message);
       setInventory([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   // Re-fetch live whenever the screen comes into focus
   useFocusEffect(
@@ -85,22 +79,43 @@ export const ArtisanProductsScreen = () => {
     loadInventory();
   };
 
+  const handleDeleteItem = (item) => {
+    Alert.alert(
+      'Delete Craft Item',
+      `Are you sure you want to remove "${item.title}" from your catalog? It will be permanently removed from your inventory and the marketplace.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await productService.deleteProduct(item.id);
+              setInventory((prev) => prev.filter((i) => String(i.id) !== String(item.id)));
+              Alert.alert('Item Removed', `"${item.title}" has been deleted.`);
+            } catch (err) {
+              console.warn('Error deleting craft:', err);
+              Alert.alert('Error', 'Failed to delete craft piece: ' + (err.message || 'Unknown error'));
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCreateCraft = async () => {
     if (!title.trim() || !price.trim()) {
       Alert.alert('Validation Required', 'Please provide a craft title and price.');
       return;
     }
 
-    if (!user?.id) {
-      Alert.alert('Authentication Required', 'Please sign in to your artisan account to publish crafts.');
-      return;
-    }
-
     try {
       setSaving(true);
       await productService.createProduct({
-        artisan_id: user.id,
+        artisan_id: user?.id || 'artisan-custom',
+        artisan: user?.artisanName || 'Master Artisan',
         title: title.trim(),
+        name: title.trim(),
         category,
         price: parseFloat(price.replace(/[^0-9.]/g, '')),
         stock: parseInt(stock, 10) || 1,
@@ -108,7 +123,7 @@ export const ArtisanProductsScreen = () => {
         is_active: true,
       });
 
-      Alert.alert('Success', 'Handcrafted piece added to your artisan catalog!');
+      Alert.alert('Success', 'Handcrafted piece added to your artisan catalog and visible on the marketplace!');
       setTitle('');
       setPrice('');
       setStock('1');
@@ -153,7 +168,7 @@ export const ArtisanProductsScreen = () => {
             <Text style={styles.emptyEmoji}>🎨</Text>
             <Text style={styles.emptyTitle}>No Catalog Items Yet</Text>
             <Text style={styles.emptySubtitle}>
-              You haven't listed any handcrafted crafts in your artisan catalog. Tap "+ Add New Handcrafted Piece" above to publish your first piece!
+              You haven&apos;t listed any handcrafted crafts in your artisan catalog. Tap &quot;+ Add New Handcrafted Piece&quot; above to publish your first piece!
             </Text>
             <TouchableOpacity onPress={onRefresh} style={styles.emptyRefreshBtn}>
               <Text style={styles.emptyRefreshBtnText}>🔄 Pull to Refresh</Text>
@@ -187,6 +202,17 @@ export const ArtisanProductsScreen = () => {
                       {item.status}
                     </Text>
                   </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.categoryText}>{item.category || 'Handicrafts'}</Text>
+                  <TouchableOpacity
+                    style={styles.deleteCardBtn}
+                    onPress={() => handleDeleteItem(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.deleteCardBtnText}>🗑️ Delete Item</Text>
+                  </TouchableOpacity>
                 </View>
               </Card>
             ))}
@@ -343,6 +369,31 @@ const styles = StyleSheet.create({
   },
   tagTextOut: {
     color: '#D32F2F',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  categoryText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  deleteCardBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: '#FEE2E2',
+    borderRadius: RADIUS.sm,
+  },
+  deleteCardBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 
   // Modal styles

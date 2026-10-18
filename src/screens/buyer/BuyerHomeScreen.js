@@ -104,15 +104,20 @@ export const BuyerHomeScreen = ({ navigation, route }) => {
   //change
   const displayedProducts = dbProducts.map((p) => ({
     id: p.id,
-    title: p.title,
-    artisan: p.profiles?.full_name || 'Master Artisan',
-    region: p.profiles?.location || 'Craft Workshop',
-    price: `LKR ${Number(p.price || 0).toLocaleString()}`,
-    unitPrice: Number(p.price),
-    image_url: p.image_url || p.imageUrl || p.image || null,
+    title: p.title || p.name,
+    name: p.name || p.title,
+    artisan: p.profiles?.full_name || p.artisan || 'Master Artisan',
+    region: p.profiles?.location || p.location || 'Craft Workshop',
+    price: String(p.price).startsWith('LKR') ? p.price : `LKR ${Number(String(p.price).replace(/[^0-9.]/g, '') || 0).toLocaleString()}`,
+    unitPrice: Number(String(p.price).replace(/[^0-9.]/g, '') || 0),
+    image_url: p.image_url || p.imageUrl || p.image || p.photo || null,
+    image: p.image_url || p.imageUrl || p.image || p.photo || null,
     tag: p.category || 'Craft',
-    icon: p.category === 'Textiles' ? '🧣' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
+    category: p.category || 'Craft',
+    description: p.description || '',
+    icon: p.category === 'Textiles' || p.category === 'Batik Apparel' ? '👗' : p.category === 'Ceramics' ? '🫖' : p.category === 'Woodcraft' ? '🪵' : p.category === 'Jewelry' ? '💍' : '✨',
   }));
+
 
   return (
     <View style={styles.container}>
@@ -210,23 +215,28 @@ export const BuyerHomeScreen = ({ navigation, route }) => {
           <View style={styles.productsGrid}>
             {displayedProducts.map((prod) => (
               <Card key={prod.id} style={styles.productCard}>
-                <View style={styles.productIconContainer}>
-                  {prod.image_url ? (
-                    <Image
-                      source={{ uri: prod.image_url }}
-                      style={styles.productImage}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <Text style={styles.productEmoji}>{prod.icon}</Text>
-                  )}
-                </View>
-                <Text style={styles.productTag}>{prod.tag}</Text>
-                <Text style={styles.productTitle} numberOfLines={2}>
-                  {prod.title}
-                </Text>
-                <Text style={styles.artisanName}>by {prod.artisan}</Text>
-                <Text style={styles.productRegion}>{prod.region}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  onPress={() => navigation?.navigate(ROUTES.BUYER.PRODUCT_DETAIL, { product: prod })}
+                >
+                  <View style={styles.productIconContainer}>
+                    {prod.image_url ? (
+                      <Image
+                        source={{ uri: prod.image_url }}
+                        style={styles.productImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={styles.productEmoji}>{prod.icon}</Text>
+                    )}
+                  </View>
+                  <Text style={styles.productTag}>{prod.tag}</Text>
+                  <Text style={styles.productTitle} numberOfLines={2}>
+                    {prod.title}
+                  </Text>
+                  <Text style={styles.artisanName}>by {prod.artisan}</Text>
+                  <Text style={styles.productRegion}>{prod.region}</Text>
+                </TouchableOpacity>
                 <View style={styles.priceRow}>
                   <Text style={styles.price}>{prod.price}</Text>
                   

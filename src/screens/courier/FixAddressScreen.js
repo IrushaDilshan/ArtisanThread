@@ -70,7 +70,7 @@ export const FixAddressScreen = ({ navigation, route }) => {
       if (isMounted && del) {
         setDeliveryData(del);
       }
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { isMounted = false; };
   }, [trackingId]);
 
@@ -118,22 +118,20 @@ export const FixAddressScreen = ({ navigation, route }) => {
   };
 
   const handleOpenGoogleMaps = () => {
-    const lat = deliveryData?.pickup_lat || 6.773;
-    const lng = deliveryData?.pickup_lng || 79.8816;
-    const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-    Linking.openURL(url).catch(() => {});
+    const addressStr = [pickupStreet, pickupCity, 'Sri Lanka'].filter(Boolean).join(', ');
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressStr)}`;
+    Linking.openURL(url).catch(() => { });
   };
 
   const handleSendCorrection = () => {
     setIsSent(true);
 
     // Save correction in courier service
-    courierService.updateCourierLocation(trackingId, 6.7732, 79.882).catch(() => {});
+    courierService.updateCourierLocation(trackingId, 6.7732, 79.882).catch(() => { });
 
     Alert.alert(
       'Correction Sent! 🎉',
-      `${artisanName} has received your live GPS pin (~${offsetMeters}m correction) and landmark alert: "${
-        landmarkText || 'Pin relocated'
+      `${artisanName} has received your live GPS pin (~${offsetMeters}m correction) and landmark alert: "${landmarkText || 'Pin relocated'
       }". You can now proceed with your pickup.`,
       [
         {

@@ -21,47 +21,13 @@ import { Button } from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
 import { ROUTES } from '../../navigation/routes';
 import { orderService } from '../../services/orderService';
+import { productService } from '../../services/productService';
 
 const AVAILABLE_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
 export const ArtisanDashboardScreen = ({ navigation }) => {
   const { user } = useAuth();
   const [orders, setOrders] = useState([]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let isMounted = true;
-      orderService.getArtisanOrders().then((data) => {
-        if (isMounted) setOrders(data || []);
-      });
-      return () => {
-        isMounted = false;
-      };
-    }, [])
-  );
-
-  const pendingCount = orders.filter(
-    (o) =>
-      !o.status ||
-      o.status === 'PENDING' ||
-      o.status === 'CONFIRMED' ||
-      o.status === 'CRAFTING' ||
-      o.status === 'READY_FOR_PICKUP'
-  ).length;
-
-  const metrics = [
-    { label: 'Active Crafts', val: '24', icon: '🏺' },
-    { label: 'Orders Pending', val: String(orders.length > 0 ? pendingCount : 2), icon: '⏳' },
-    { label: 'Monthly Sales', val: 'LKR 384,000', icon: '📈' },
-    { label: 'Artisan Rating', val: '4.9★', icon: '✨' },
-  ];
-
-  const recentOrders = orders.length > 0
-    ? orders.slice(0, 3)
-    : [
-        { id: 'AT-1049', item: 'Indigo Silk Scarf (Qty 2)', buyer: 'Maya Lin', status: 'PENDING' },
-        { id: 'AT-1048', item: 'Ceramic Matcha Bowl', buyer: 'Julian Moore', status: 'PENDING' },
-      ];
 
   // Interactive Inventory & Stock state with real photo URLs
   const [inventory, setInventory] = useState([
@@ -110,6 +76,64 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
       photo: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?w=400',
     },
   ]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      Promise.all([
+        orderService.getArtisanOrders(),
+        productService.getArtisanProducts(user?.id),
+        productService.getDeletedProductIds(),
+      ]).then(([orderData, saved, deletedIds]) => {
+        if (!isMounted) return;
+        if (orderData) setOrders(orderData);
+        setInventory((prev) => {
+          const activePrev = prev.filter((p) => !deletedIds.has(String(p.id)));
+          const ids = new Set((saved || []).map((s) => String(s.id)));
+          const notInSaved = activePrev.filter((p) => !ids.has(String(p.id)));
+          const formattedSaved = (saved || []).map((s) => ({
+            id: String(s.id),
+            name: s.name || s.title,
+            price: String(s.price).startsWith('LKR') ? s.price : `LKR ${Number(s.price || 0).toLocaleString()}`,
+            rawPrice: String(s.rawPrice || s.price),
+            stock: s.stock !== undefined ? s.stock : 1,
+            inStock: s.inStock !== undefined ? s.inStock : (s.stock > 0),
+            description: s.description || '',
+            sizes: s.sizes || ['S', 'M', 'L'],
+            photo: s.photo || s.image || s.image_url || 'https://images.unsplash.com/photo-1606760227091-3dd850d97f1d?w=400',
+          }));
+          return [...formattedSaved, ...notInSaved];
+        });
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, [user?.id])
+  );
+
+  const pendingCount = orders.filter(
+    (o) =>
+      !o.status ||
+      o.status === 'PENDING' ||
+      o.status === 'CONFIRMED' ||
+      o.status === 'CRAFTING' ||
+      o.status === 'READY_FOR_PICKUP'
+  ).length;
+
+  const metrics = [
+    { label: 'Active Crafts', val: '24', icon: '🏺' },
+    { label: 'Orders Pending', val: String(orders.length > 0 ? pendingCount : 2), icon: '⏳' },
+    { label: 'Monthly Sales', val: 'LKR 384,000', icon: '📈' },
+    { label: 'Artisan Rating', val: '4.9★', icon: '✨' },
+  ];
+
+  const recentOrders = orders.length > 0
+    ? orders.slice(0, 3)
+    : [
+      { id: 'AT-1049', item: 'Indigo Silk Scarf (Qty 2)', buyer: 'Maya Lin', status: 'PENDING' },
+      { id: 'AT-1048', item: 'Ceramic Matcha Bowl', buyer: 'Julian Moore', status: 'PENDING' },
+    ];
+
 
   // Modal Popup Form State
   const [modalVisible, setModalVisible] = useState(false);
@@ -239,7 +263,7 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
     }
   };
 
-  const handleSaveItem = () => {
+  const handleSaveItem = async () => {
     if (!itemName.trim() || !itemPrice.trim()) {
       Alert.alert('Validation Error', 'Please enter both item name and price.');
       return;
@@ -254,29 +278,40 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
 
     if (editingItem) {
       // Update existing item
+      const updatedData = {
+        name: itemName.trim(),
+        title: itemName.trim(),
+        price: numPrice,
+        rawPrice: cleanPriceVal,
+        stock: numStock,
+        inStock: numStock > 0,
+        description: itemDescription.trim(),
+        sizes: itemSizes,
+        photo: finalPhoto,
+        image: finalPhoto,
+        image_url: finalPhoto,
+      };
+
       setInventory((prev) =>
         prev.map((item) => {
           if (item.id === editingItem.id) {
             return {
               ...item,
-              name: itemName.trim(),
+              ...updatedData,
               price: formattedPriceStr,
-              rawPrice: cleanPriceVal,
-              stock: numStock,
-              inStock: numStock > 0,
-              description: itemDescription.trim(),
-              sizes: itemSizes,
-              photo: finalPhoto,
             };
           }
           return item;
         })
       );
+      productService.updateProduct(editingItem.id, updatedData).catch((e) => console.warn(e));
     } else {
       // Add new item
+      const newId = Date.now().toString();
       const newItem = {
-        id: Date.now().toString(),
+        id: newId,
         name: itemName.trim(),
+        title: itemName.trim(),
         price: formattedPriceStr,
         rawPrice: cleanPriceVal,
         stock: numStock,
@@ -284,12 +319,53 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
         description: itemDescription.trim(),
         sizes: itemSizes.length > 0 ? itemSizes : ['M'],
         photo: finalPhoto,
+        image: finalPhoto,
+        image_url: finalPhoto,
+        artisan: user?.artisanName || 'Master Artisan',
+        artisan_id: user?.id || 'artisan-custom',
+        category: 'Handicrafts',
       };
       setInventory((prev) => [newItem, ...prev]);
+      productService.createProduct(newItem).catch((e) => console.warn(e));
+      Alert.alert(
+        'Piece Published',
+        `"${itemName.trim()}" is now live in your catalog and instantly visible to buyers on the Marketplace!`
+      );
     }
 
     setModalVisible(false);
   };
+
+  const handleDeleteItem = (item) => {
+    if (!item) return;
+    const itemNameDisplay = item.name || item.title || 'this item';
+    Alert.alert(
+      'Delete Item',
+      `Are you sure you want to remove "${itemNameDisplay}" from your inventory? It will no longer be visible to buyers on the marketplace.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await productService.deleteProduct(item.id);
+              setInventory((prev) => prev.filter((i) => String(i.id) !== String(item.id)));
+              setModalVisible(false);
+              Alert.alert('Item Deleted', `"${itemNameDisplay}" has been removed from inventory.`);
+            } catch (err) {
+              console.warn('Error deleting item:', err);
+              Alert.alert('Error', 'Could not delete item. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
 
   return (
     <View style={styles.container}>
@@ -349,93 +425,103 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
           {filteredInventory.length === 0 ? (
             <View style={styles.emptySearchContainer}>
               <Text style={styles.emptySearchEmoji}>🔍</Text>
-              <Text style={styles.emptySearchText}>No crafts match "{searchQuery}"</Text>
+              <Text style={styles.emptySearchText}>No crafts match &apos;{searchQuery}&apos;</Text>
             </View>
           ) : (
             filteredInventory.map((item) => (
-            <Card key={item.id} style={styles.inventoryCard}>
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => openEditModal(item)}
-              >
-                <View style={styles.invTopRow}>
-                  <View style={styles.photoContainer}>
-                    {item.photo ? (
-                      <Image source={{ uri: item.photo }} style={styles.itemPhoto} resizeMode="cover" />
-                    ) : (
-                      <View style={styles.photoPlaceholder}>
-                        <Text style={styles.photoPlaceholderText}>📷</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.invInfo}>
-                    <Text style={styles.invName}>{item.name}</Text>
-                    <Text style={styles.invPrice}>{item.price}</Text>
-
-                    {/* Available Sizes preview */}
-                    {item.sizes && item.sizes.length > 0 && (
-                      <View style={styles.sizePillRow}>
-                        {item.sizes.map((sz) => (
-                          <View key={sz} style={styles.sizeMiniPill}>
-                            <Text style={styles.sizeMiniText}>{sz}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-
-                  {/* In Stock / Out of Stock Toggle Switch */}
-                  <View style={styles.toggleContainer}>
-                    <Text
-                      style={[
-                        styles.toggleLabel,
-                        item.inStock ? styles.labelInStock : styles.labelOutOfStock,
-                      ]}
-                    >
-                      {item.inStock ? 'In Stock' : 'Out of Stock'}
-                    </Text>
-                    <Switch
-                      value={item.inStock}
-                      onValueChange={(val) => toggleStock(item.id, val)}
-                      trackColor={{ false: '#E0E0E0', true: COLORS.primaryMuted }}
-                      thumbColor={item.inStock ? COLORS.primary : '#9E9E9E'}
-                    />
-                  </View>
-                </View>
-              </TouchableOpacity>
-
-              {/* Stock Counter Controls (+ and -) */}
-              <View style={styles.stockControlRow}>
+              <Card key={item.id} style={styles.inventoryCard}>
                 <TouchableOpacity
+                  activeOpacity={0.85}
                   onPress={() => openEditModal(item)}
-                  activeOpacity={0.7}
                 >
-                  <Text style={styles.editBtnLink}>✏️ Edit Item Details</Text>
+                  <View style={styles.invTopRow}>
+                    <View style={styles.photoContainer}>
+                      {item.photo ? (
+                        <Image source={{ uri: item.photo }} style={styles.itemPhoto} resizeMode="cover" />
+                      ) : (
+                        <View style={styles.photoPlaceholder}>
+                          <Text style={styles.photoPlaceholderText}>📷</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.invInfo}>
+                      <Text style={styles.invName}>{item.name}</Text>
+                      <Text style={styles.invPrice}>{item.price}</Text>
+
+                      {/* Available Sizes preview */}
+                      {item.sizes && item.sizes.length > 0 && (
+                        <View style={styles.sizePillRow}>
+                          {item.sizes.map((sz) => (
+                            <View key={sz} style={styles.sizeMiniPill}>
+                              <Text style={styles.sizeMiniText}>{sz}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* In Stock / Out of Stock Toggle Switch */}
+                    <View style={styles.toggleContainer}>
+                      <Text
+                        style={[
+                          styles.toggleLabel,
+                          item.inStock ? styles.labelInStock : styles.labelOutOfStock,
+                        ]}
+                      >
+                        {item.inStock ? 'In Stock' : 'Out of Stock'}
+                      </Text>
+                      <Switch
+                        value={item.inStock}
+                        onValueChange={(val) => toggleStock(item.id, val)}
+                        trackColor={{ false: '#E0E0E0', true: COLORS.primaryMuted }}
+                        thumbColor={item.inStock ? COLORS.primary : '#9E9E9E'}
+                      />
+                    </View>
+                  </View>
                 </TouchableOpacity>
 
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity
-                    style={styles.stepBtn}
-                    onPress={() => decrementStock(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <View style={styles.countBadge}>
-                    <Text style={styles.countText}>{item.stock}</Text>
+                {/* Stock Counter Controls (+ and -) and Item Actions */}
+                <View style={styles.stockControlRow}>
+                  <View style={styles.itemActionsGroup}>
+                    <TouchableOpacity
+                      onPress={() => openEditModal(item)}
+                      activeOpacity={0.7}
+                      style={styles.editActionBtn}
+                    >
+                      <Text style={styles.editBtnLink}>✏️ Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteItem(item)}
+                      activeOpacity={0.7}
+                      style={styles.deleteActionBtn}
+                    >
+                      <Text style={styles.deleteBtnLink}>🗑️ Delete</Text>
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    style={styles.stepBtn}
-                    onPress={() => incrementStock(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.stepBtnText}>+</Text>
-                  </TouchableOpacity>
+
+                  <View style={styles.stepperContainer}>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => decrementStock(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.stepBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countText}>{item.stock}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => incrementStock(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.stepBtnText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            </Card>
-          )))}
+              </Card>
+            )))}
         </View>
 
         {/* Recent Inquiries & Orders */}
@@ -636,6 +722,14 @@ export const ArtisanDashboardScreen = ({ navigation }) => {
                 onPress={() => setModalVisible(false)}
                 style={{ flex: 1 }}
               />
+              {editingItem && (
+                <Button
+                  title="Delete"
+                  variant="danger"
+                  onPress={() => handleDeleteItem(editingItem)}
+                  style={{ flex: 1 }}
+                />
+              )}
               <Button
                 title={editingItem ? 'Save Changes' : 'Add to Inventory'}
                 variant="primary"
@@ -810,10 +904,32 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
   },
+  itemActionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editActionBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#F3F4F6',
+  },
   editBtnLink: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  deleteActionBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADIUS.sm,
+    backgroundColor: '#FEE2E2',
+  },
+  deleteBtnLink: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
   },
   stepperContainer: {
     flexDirection: 'row',

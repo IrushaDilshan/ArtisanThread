@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
 	FlatList,
 	Image,
 	Modal,
 	Pressable,
+	RefreshControl,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -12,11 +13,13 @@ import {
 	View,
 	useWindowDimensions,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/colors';
 import { ROUTES } from '../../navigation/routes';
+import { productService } from '../../services/productService';
 
 const CATEGORIES = [
 	{ id: 'All', label: 'All Crafts', icon: 'sparkles' },
@@ -110,6 +113,32 @@ export const MarketplaceScreen = ({ navigation }) => {
 	const [toastMessage, setToastMessage] = useState('');
 	const [showFilterModal, setShowFilterModal] = useState(false);
 	const [failedImages, setFailedImages] = useState({});
+	const [catalog, setCatalog] = useState(PRODUCTS);
+	const [refreshing, setRefreshing] = useState(false);
+
+	const loadCatalog = useCallback(async () => {
+		try {
+			const data = await productService.getCatalog();
+			if (data) {
+				setCatalog(data);
+			}
+		} catch (e) {
+			console.warn('Error fetching live marketplace catalog:', e);
+		} finally {
+			setRefreshing(false);
+		}
+	}, []);
+
+	useFocusEffect(
+		useCallback(() => {
+			loadCatalog();
+		}, [loadCatalog])
+	);
+
+	const onRefresh = () => {
+		setRefreshing(true);
+		loadCatalog();
+	};
 
 	const { width: screenWidth } = useWindowDimensions();
 
@@ -122,17 +151,22 @@ export const MarketplaceScreen = ({ navigation }) => {
 
 	const products = useMemo(() => {
 		const query = search.trim().toLowerCase();
-		return PRODUCTS.filter((product) => {
+		return catalog.filter((product) => {
+			const prodName = product.title || product.name || '';
+			const prodCat = product.category || '';
+			const prodArtisan = product.artisan || '';
+			const prodLoc = product.location || '';
 			const matchesCategory =
-				selectedCategory === 'All' || product.category === selectedCategory;
+				selectedCategory === 'All' || prodCat.toLowerCase().includes(selectedCategory.toLowerCase());
 			const matchesSearch =
 				!query ||
-				`${product.name} ${product.artisan} ${product.category} ${product.location || ''}`
+				`${prodName} ${prodArtisan} ${prodCat} ${prodLoc}`
 					.toLowerCase()
 					.includes(query);
 			return matchesCategory && matchesSearch;
 		});
-	}, [search, selectedCategory]);
+	}, [catalog, search, selectedCategory]);
+
 
 	const toggleFavorite = (id) => {
 		setFavorites((current) => {
@@ -362,11 +396,14 @@ export const MarketplaceScreen = ({ navigation }) => {
 			<FlatList
 				data={products}
 				renderItem={renderProduct}
-				keyExtractor={(item) => item.id}
+				keyExtractor={(item) => String(item.id)}
 				numColumns={numColumns}
 				columnWrapperStyle={styles.productRow}
 				contentContainerStyle={styles.listContent}
 				showsVerticalScrollIndicator={false}
+				refreshControl={
+					<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+				}
 				ListHeaderComponent={(
 					<View>
 						{/* Hero Artisan Banner */}

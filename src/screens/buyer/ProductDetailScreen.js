@@ -82,8 +82,22 @@ export const ProductDetailScreen = ({ navigation, route }) => {
 		}
 	};
 
+	const fullProduct = useMemo(() => ({
+		...product,
+		id: product.id || 'current-craft-item',
+		title,
+		name: title,
+		price,
+		image: images[0],
+		image_url: images[0],
+		artisan: seller,
+		location,
+		category,
+		rating,
+	}), [product, title, price, images, seller, location, category, rating]);
+
 	const handleChat = () => {
-		navigation?.navigate(ROUTES.BUYER.CHAT, { artisan: seller, product });
+		navigation?.navigate(ROUTES.BUYER.CHAT, { artisan: seller, product: fullProduct });
 	};
 
 	const handlePurchase = () => {
@@ -587,11 +601,11 @@ export const ProductDetailScreen = ({ navigation, route }) => {
 									try {
 										navigation?.navigate('BuyerTabs', {
 											screen: ROUTES.BUYER.CART,
-											params: { product, size: selectedSize },
+											params: { product: fullProduct, size: selectedSize },
 										});
 									} catch (e) {
 										navigation?.navigate(ROUTES.BUYER.CART, {
-											product,
+											product: fullProduct,
 											size: selectedSize,
 										});
 									}

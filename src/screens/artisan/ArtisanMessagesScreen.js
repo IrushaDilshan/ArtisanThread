@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,115 +9,120 @@ import {
   Modal,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../../constants/colors';
 import { SPACING, RADIUS } from '../../constants/theme';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { useAuth } from '../../context/AuthContext';
-
-const INITIAL_MESSAGES = [
-  {
-    id: 'msg-1',
-    sender: 'Maya Lin',
-    avatar: 'ML',
-    role: 'Art Collector',
-    craft: 'Indigo Silk Scarf',
-    lastMessage: 'Can you customize the indigo dye pattern to a lighter gradient shade?',
-    time: '10:42 AM',
-    unread: true,
-    history: [
-      { sender: 'Maya Lin', text: 'Hi Kenji! I saw your Indigo Silk Scarf listing.', time: '10:30 AM' },
-      { sender: 'Maya Lin', text: 'Can you customize the indigo dye pattern to a lighter gradient shade?', time: '10:42 AM' },
-    ],
-  },
-  {
-    id: 'msg-2',
-    sender: 'Julian Moore',
-    avatar: 'JM',
-    role: 'Buyer',
-    craft: 'Ceramic Matcha Bowl',
-    lastMessage: 'Thank you for shipping! Will the parcel include the wooden tomobako box?',
-    time: 'Yesterday',
-    unread: false,
-    history: [
-      { sender: 'Julian Moore', text: 'Thank you for shipping! Will the parcel include the wooden tomobako box?', time: 'Yesterday' },
-      { sender: 'You', text: 'Yes Julian! Every ceremonial bowl is packed in a custom hand-stamped tomobako.', time: 'Yesterday' },
-    ],
-  },
-  {
-    id: 'msg-3',
-    sender: 'Marcus Vance',
-    avatar: 'MV',
-    role: 'Courier Partner',
-    craft: 'Batch Delivery #B-12',
-    lastMessage: 'Arriving at 4:00 PM for the 3 packaged orders. Please have dispatch receipts ready.',
-    time: 'Sep 28',
-    unread: false,
-    history: [
-      { sender: 'Marcus Vance', text: 'Arriving at 4:00 PM for the 3 packaged orders. Please have dispatch receipts ready.', time: 'Sep 28' },
-    ],
-  },
-  {
-    id: 'msg-4',
-    sender: 'Sarah Jenkins',
-    avatar: 'SJ',
-    role: 'Custom Inquiry',
-    craft: 'Sashiko Table Runner',
-    lastMessage: 'Interested in ordering a 6-ft custom hand-loomed runner for a wedding gift.',
-    time: 'Sep 25',
-    unread: false,
-    history: [
-      { sender: 'Sarah Jenkins', text: 'Interested in ordering a 6-ft custom hand-loomed runner for a wedding gift.', time: 'Sep 25' },
-    ],
-  },
-];
+import { chatService } from '../../services/chatService';
 
 export const ArtisanMessagesScreen = () => {
   const { user } = useAuth();
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState([]);
   const [search, setSearch] = useState('');
-  const [selectedChat, setSelectedChat] = useState(null);
+  const [selectedChatId, setSelectedChatId] = useState(null);
   const [replyText, setReplyText] = useState('');
+
+  const selectedChat = useMemo(() => {
+    if (!selectedChatId) return null;
+    return messages.find((m) => m.id === selectedChatId) || null;
+  }, [messages, selectedChatId]);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const data = await chatService.getConversations();
+      if (data) {
+        setMessages(data);
+      }
+    } catch (e) {
+      console.warn('Error loading artisan conversations:', e);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadConversations();
+    }, [loadConversations])
+  );
+
+  useEffect(() => {
+    const unsubscribe = chatService.subscribe(() => {
+      loadConversations();
+    });
+    return unsubscribe;
+  }, [loadConversations]);
 
   const filteredMessages = messages.filter(
     (m) =>
-      m.sender.toLowerCase().includes(search.toLowerCase()) ||
-      m.craft.toLowerCase().includes(search.toLowerCase()) ||
-      m.lastMessage.toLowerCase().includes(search.toLowerCase())
+      (m.sender && m.sender.toLowerCase().includes(search.toLowerCase())) ||
+      (m.craft && m.craft.toLowerCase().includes(search.toLowerCase())) ||
+      (m.lastMessage && m.lastMessage.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleOpenChat = (chat) => {
-    setSelectedChat(chat);
-    // Mark as read
-    setMessages((prev) =>
-      prev.map((m) => (m.id === chat.id ? { ...m, unread: false } : m))
-    );
+  const handleOpenChat = async (chat) => {
+    setSelectedChatId(chat.id);
+    try {
+      await chatService.markAsRead(chat.id);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === chat.id ? { ...m, unread: false } : m))
+      );
+    } catch (e) {
+      console.warn('Error marking chat as read:', e);
+    }
   };
 
-  const handleSendReply = () => {
-    if (!replyText.trim() || !selectedChat) return;
-
-    const newMsg = {
-      sender: 'You',
-      text: replyText.trim(),
-      time: 'Just now',
-    };
-
-    const updatedHistory = [...selectedChat.history, newMsg];
-    const updatedChat = {
-      ...selectedChat,
-      lastMessage: replyText.trim(),
-      time: 'Just now',
-      history: updatedHistory,
-    };
-
-    setSelectedChat(updatedChat);
-    setMessages((prev) =>
-      prev.map((m) => (m.id === selectedChat.id ? updatedChat : m))
-    );
+  const handleCloseChat = () => {
+    setSelectedChatId(null);
     setReplyText('');
   };
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !selectedChatId) return;
+
+    const trimmed = replyText.trim();
+    setReplyText('');
+
+    try {
+      await chatService.sendMessage(selectedChatId, {
+        sender: 'maker',
+        senderName: user?.artisanName || 'Master Artisan',
+        text: trimmed,
+      });
+
+      const data = await chatService.getConversations();
+      if (data) {
+        setMessages(data);
+      }
+    } catch (e) {
+      console.warn('Error sending artisan reply:', e);
+    }
+  };
+
+
+  const getChatHistory = (chat) => {
+    if (!chat) return [];
+    if (Array.isArray(chat.messages) && chat.messages.length > 0) {
+      return chat.messages.map((m) => {
+        const isMe = m.sender === 'maker' || m.sender === 'You';
+        return {
+          sender: isMe ? 'You' : (m.senderName || chat.sender || 'Buyer'),
+          text: m.text,
+          time: m.time,
+          isMe,
+        };
+      });
+    }
+    if (Array.isArray(chat.history)) {
+      return chat.history.map((h) => ({
+        ...h,
+        isMe: h.sender === 'You',
+      }));
+    }
+    return [];
+  };
+
 
   return (
     <View style={styles.container}>
@@ -185,10 +190,18 @@ export const ArtisanMessagesScreen = () => {
         visible={!!selectedChat}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setSelectedChat(null)}
+        onRequestClose={handleCloseChat}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={handleCloseChat}
+        >
+          <TouchableOpacity
+            style={styles.modalContent}
+            activeOpacity={1}
+            onPress={(e) => e?.stopPropagation?.()}
+          >
             {selectedChat && (
               <>
                 <View style={styles.modalHeader}>
@@ -197,16 +210,18 @@ export const ArtisanMessagesScreen = () => {
                     <Text style={styles.modalCraft}>Inquiry regarding: {selectedChat.craft}</Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => setSelectedChat(null)}
+                    onPress={handleCloseChat}
                     style={styles.closeBtn}
+                    hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.closeBtnText}>✕</Text>
                   </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.chatHistory} showsVerticalScrollIndicator={false}>
-                  {selectedChat.history.map((msg, index) => {
-                    const isMe = msg.sender === 'You';
+                  {getChatHistory(selectedChat).map((msg, index) => {
+                    const isMe = msg.isMe || msg.sender === 'You';
                     return (
                       <View
                         key={index}
@@ -244,9 +259,10 @@ export const ArtisanMessagesScreen = () => {
                 </View>
               </>
             )}
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
+
     </View>
   );
 };

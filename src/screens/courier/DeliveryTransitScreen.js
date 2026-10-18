@@ -194,16 +194,92 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
     deliveryData?.dropoff_address?.phone ||
     '077 123 4567';
   const pickupCity = deliveryData?.pickup_address?.city || 'Payagala';
+
+  // Helper to reliably resolve the order's real dropoff address
+  const getFullDestinationAddress = () => {
+    // 1. Direct from matchedOrder.destination
+    if (typeof matchedOrder?.destination === 'string' && matchedOrder.destination.trim()) {
+      return matchedOrder.destination.trim();
+    }
+
+    // 2. From matchedOrder.shipping_address or shippingAddress
+    const orderShipping = matchedOrder?.shipping_address || matchedOrder?.shippingAddress;
+    if (typeof orderShipping === 'string' && orderShipping.trim()) {
+      return orderShipping.trim();
+    }
+    if (orderShipping && typeof orderShipping === 'object') {
+      const parts = [
+        orderShipping.address_line1 || orderShipping.addressLine1 || orderShipping.street || orderShipping.address,
+        orderShipping.address_line2 || orderShipping.addressLine2,
+        orderShipping.city,
+        orderShipping.district || orderShipping.state || orderShipping.region,
+        orderShipping.postal_code || orderShipping.postalCode,
+      ].filter(Boolean);
+      if (parts.length > 0) return parts.join(', ');
+    }
+
+    // 3. From deliveryData.dropoff_address
+    const dropoff = deliveryData?.dropoff_address;
+    if (typeof dropoff === 'string' && dropoff.trim()) {
+      return dropoff.trim();
+    }
+    if (dropoff && typeof dropoff === 'object') {
+      const parts = [
+        dropoff.address_line1 || dropoff.addressLine1 || dropoff.street || dropoff.address,
+        dropoff.address_line2 || dropoff.addressLine2,
+        dropoff.city,
+        dropoff.district || dropoff.state,
+        dropoff.postal_code,
+      ].filter(Boolean);
+      if (parts.length > 0) return parts.join(', ');
+    }
+
+    // 4. From deliveryData.order
+    const delOrder = deliveryData?.order;
+    if (typeof delOrder?.destination === 'string' && delOrder.destination.trim()) {
+      return delOrder.destination.trim();
+    }
+    const delOrderShipping = delOrder?.shipping_address || delOrder?.shippingAddress;
+    if (typeof delOrderShipping === 'string' && delOrderShipping.trim()) {
+      return delOrderShipping.trim();
+    }
+    if (delOrderShipping && typeof delOrderShipping === 'object') {
+      const parts = [
+        delOrderShipping.address_line1 || delOrderShipping.addressLine1 || delOrderShipping.street || delOrderShipping.address,
+        delOrderShipping.address_line2 || delOrderShipping.addressLine2,
+        delOrderShipping.city,
+        delOrderShipping.district,
+      ].filter(Boolean);
+      if (parts.length > 0) return parts.join(', ');
+    }
+
+    // 5. From route params
+    if (typeof route?.params?.destination === 'string' && route.params.destination.trim()) {
+      return route.params.destination.trim();
+    }
+
+    // 6. From dropoffStreet and dropoffCity
+    const street = route?.params?.dropoffStreet;
+    const city = route?.params?.dropoffCity;
+    if (street || city) {
+      return [street, city].filter(Boolean).join(', ');
+    }
+
+    return 'Colombo 07, Sri Lanka';
+  };
+
+  const fullDestinationAddress = getFullDestinationAddress();
+
   const dropoffCity =
     matchedOrder?.destination?.split(',')?.pop()?.trim() ||
     deliveryData?.dropoff_address?.city ||
-    'Colombo 03';
+    (fullDestinationAddress.includes(',') ? fullDestinationAddress.split(',').pop().trim() : 'Colombo 07');
+
   const dropoffStreet =
-    matchedOrder?.destination ||
     deliveryData?.dropoff_address?.address_line1 ||
-    '28/4 Galle Road';
-  const dropoffLat = deliveryData?.dropoff_lat || 6.9271;
-  const dropoffLng = deliveryData?.dropoff_lng || 79.8612;
+    matchedOrder?.destination ||
+    (fullDestinationAddress.includes(',') ? fullDestinationAddress.split(',')[0].trim() : fullDestinationAddress);
+
   const totalAmount =
     route?.params?.totalAmount ||
     matchedOrder?.total_amount ||
@@ -217,15 +293,22 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
     deliveryData?.order?.payment_status === 'cash_on_delivery' ||
     /cash|cod/i.test(deliveryData?.recipient_notes || '');
 
-  // Launch Google Maps GPS Turn-by-Turn Navigation to Buyer destination
+  // Launch Google Maps GPS Turn-by-Turn Navigation from Courier's live location to Order's Destination
   const handleNavigate = () => {
-    const lat = dropoffLat;
-    const lng = dropoffLng;
+    const rawDest = fullDestinationAddress;
+    const destinationQuery = /sri\s*lanka/i.test(rawDest)
+      ? rawDest
+      : `${rawDest}, Sri Lanka`;
+
+    const encodedDest = encodeURIComponent(destinationQuery);
     const label = encodeURIComponent(`${buyerName} - Delivery Dropoff`);
 
-    const googleNavIntent = `google.navigation:q=${lat},${lng}&mode=d`;
-    const googleWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-    const appleMapsUrl = `maps:0,0?q=${label}@${lat},${lng}`;
+    // Android Google Navigation intent (starts turn-by-turn navigation directly from courier's GPS location to the order address)
+    const googleNavIntent = `google.navigation:q=${encodedDest}&mode=d`;
+    // Universal Google Maps directions URL (origin automatically defaults to user's current GPS location)
+    const googleWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedDest}&travelmode=driving`;
+    // iOS Apple Maps URL (daddr sets destination from current location)
+    const appleMapsUrl = `maps:0,0?q=${label}&daddr=${encodedDest}`;
 
     const targetUrl = Platform.OS === 'ios' ? appleMapsUrl : googleNavIntent;
 
@@ -371,6 +454,30 @@ export const DeliveryTransitScreen = ({ navigation, route }) => {
               <Text style={styles.stepTitlePending}>Delivered to buyer</Text>
               <Text style={styles.stepSubtitlePending}>Waiting</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Dropoff Destination Address Card */}
+        <Text style={styles.sectionHeading}>Dropoff destination</Text>
+        <View style={styles.addressCard}>
+          <View style={styles.addressCardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addressRecipientName}>{buyerName}</Text>
+              <Text style={styles.addressFullText}>{fullDestinationAddress}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleNavigate}
+              activeOpacity={0.75}
+              style={styles.openInMapsBtn}
+            >
+              <Text style={styles.openInMapsBtnText}>🧭 Maps</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.addressPhoneRow}>
+            <Text style={styles.addressPhoneText}>📞 {buyerPhone}</Text>
+            <TouchableOpacity onPress={handleCallBuyer} activeOpacity={0.7}>
+              <Text style={styles.callBuyerLink}>Call Client</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -1013,6 +1120,73 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#D1D5DB',
     marginTop: 2,
+  },
+
+  // ----------------------------------------------------
+  // Dropoff Destination Address Card
+  // ----------------------------------------------------
+  addressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  addressCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  addressRecipientName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  addressFullText: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  openInMapsBtn: {
+    backgroundColor: '#00796B',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openInMapsBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  addressPhoneRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  addressPhoneText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  callBuyerLink: {
+    fontSize: 12,
+    color: '#00796B',
+    fontWeight: '700',
   },
 
   // ----------------------------------------------------
